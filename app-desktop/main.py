@@ -125,31 +125,179 @@ CHAPTER_HEADING_RE = re.compile(
 )
 
 
-def split_novel_into_batches(text: str, chapters_per_batch: int = 3) -> tuple[int, list[str]]:
-    """Group a chaptered novel into exact batches while preserving every source character."""
-    if chapters_per_batch < 1:
-        raise ValueError("chapters_per_batch phải lớn hơn 0.")
+def split_novel_into_chapters(text: str) -> tuple[list[str], list[str]]:
+    """Return chapter blocks and their visible headings without changing source text."""
     if not text.strip():
-        return 0, []
+        return [], []
     matches = list(CHAPTER_HEADING_RE.finditer(text))
     if not matches:
         raise ValueError(
             "Không nhận ra tiêu đề chương trong file TXT. Hãy giữ tiêu đề dạng '第1章', '第十二章', "
             "'Chapter 1' hoặc 'Chương 1' để SẢNH TRUYỆN gom chính xác 3 chương mỗi lượt."
         )
-    # The first block starts at byte/character zero so any preface is retained with chapter 1.
     starts = [0] + [match.start() for match in matches[1:]]
     chapters: list[str] = []
+    labels: list[str] = []
     for idx, start in enumerate(starts):
         end = starts[idx + 1] if idx + 1 < len(starts) else len(text)
         chapters.append(text[start:end])
+        labels.append(match_label(matches[idx].group(1)))
     if "".join(chapters) != text:
         raise AssertionError("Lỗi nội bộ: tách chương làm thay đổi văn bản nguồn.")
+    return chapters, labels
+
+
+def match_label(value: str) -> str:
+    return re.sub(r"[ \t\u3000]+", " ", value.strip())
+
+
+def split_novel_into_batches(text: str, chapters_per_batch: int = 3) -> tuple[int, list[str]]:
+    """Group a chaptered novel into exact batches while preserving every source character."""
+    if chapters_per_batch < 1:
+        raise ValueError("chapters_per_batch phải lớn hơn 0.")
+    chapters, _labels = split_novel_into_chapters(text)
     batches = [
         "".join(chapters[idx:idx + chapters_per_batch])
         for idx in range(0, len(chapters), chapters_per_batch)
     ]
     return len(chapters), batches
+
+
+def _matching_glossary_lines(source_chunk: str, glossary: dict[str, str], mode: str) -> str:
+    matches = []
+    for source, target in glossary.items():
+        if source in source_chunk or target in source_chunk:
+            matches.append((source, target))
+    matches.sort(key=lambda item: len(item[0]), reverse=True)
+    lines = "\n".join(f"{source} → {target}" for source, target in matches[:120])
+    return lines or "(Không có mục từ điển khớp trực tiếp trong đoạn này; hãy ưu tiên hồ sơ tham chiếu truyện.)"
+
+
+ARTIFACT_REMOVAL_RULES = (
+    "Chỉ loại bỏ các dòng/phần rõ ràng nằm ngoài nội dung truyện, ví dụ: "
+    "các dấu kết chương như 本章完 / 全文完 / Hết chương; PS / P.S.; lời tác giả hoặc lời người đăng ngoài truyện; "
+    "chú thích biên tập/nguồn đăng không thuộc cốt truyện; quảng cáo ứng dụng/nền tảng đọc truyện, lời mời tải app, "
+    "câu xin vote/xin vé tháng đặt ở cuối chương, link/quảng bá trang web; dấu nguồn như Nguồn: EbookTruyen.VN; "
+    "vạch trang trí, chuỗi ký tự rác hoặc ký hiệu thừa. Không dịch/viết lại các phần rác đó. "
+    "Không xóa tiêu đề chương, lời thoại, chi tiết cốt truyện hoặc văn bản có ý nghĩa trong truyện chỉ vì nó trông lạ. "
+    "Nếu không chắc một phần có phải quảng cáo/chú thích ngoài truyện hay không, ưu tiên giữ nội dung truyện."
+)
+
+
+def build_story_research_prompt(
+    novel_title: str,
+    source_mode: str,
+    source_text: str,
+    glossary: dict[str, str],
+) -> str:
+    """Build a reference-research prompt from chapter headings and short previews."""
+    chapters, labels = split_novel_into_chapters(source_text)
+    previews: list[str] = []
+    for index, chapter in enumerate(chapters[:30]):
+        clean = chapter.strip()
+        if not clean:
+            preview = "(Chương không có phần văn bản đọc được.)"
+        else:
+            opening = clean[:620]
+            tail = "\n[…phần giữa lược khỏi bản xem trước, không phải nội dung cần dịch…]\n" + clean[-180:] if len(clean) > 850 else ""
+            preview = opening + tail
+        previews.append(f"[{index + 1}] TIÊU ĐỀ: {labels[index]}\n{preview}")
+    glossary_text = "\n".join(f"{source} → {target}" for source, target in list(glossary.items())[:160])
+    if not glossary_text:
+        glossary_text = "(Chưa có từ điển riêng.)"
+    title = novel_title.strip() or "Chưa xác định; hãy suy ra thận trọng từ các tiêu đề và trích đoạn."
+    input_mode_description = (
+        "RAW TIẾNG TRUNG — sẽ được dịch sang tiếng Việt."
+        if source_mode == "Dịch raw Trung"
+        else "BẢN CONVERT TIẾNG VIỆT — sẽ được biên tập/viết lại cho tự nhiên."
+    )
+    preview_text = "\n\n".join(previews)
+    if len(chapters) > 30:
+        preview_text += f"\n\n(Còn {len(chapters) - 30} chương nữa không hiện mẫu ở bước nghiên cứu; chúng sẽ được cung cấp theo từng lượt sau.)"
+    return (
+        "BẠN ĐANG Ở BƯỚC CHUẨN BỊ HỒ SƠ TRUYỆN, CHƯA PHẢI BƯỚC DỊCH HOẶC VIẾT LẠI.\n"
+        "Hãy tìm hiểu bộ truyện để chuẩn bị dữ liệu tham chiếu nhất quán cho các yêu cầu dịch/biên tập tiếp theo trong CHÍNH CUỘC TRÒ CHUYỆN NÀY. "
+        "Nếu bạn có khả năng tìm kiếm web, hãy dùng tên truyện và thông tin có thể kiểm chứng để đối chiếu; nếu không, hãy chỉ suy luận từ tiêu đề, trích đoạn và từ điển được cung cấp. "
+        "Tuyệt đối không bịa thông tin canon; phân biệt dữ kiện chắc chắn, suy luận và điểm còn chưa rõ. Khi dữ liệu trong truyện mâu thuẫn với thông tin ngoài, ưu tiên văn bản người dùng cung cấp.\n\n"
+        f"TÊN TRUYỆN/FILE: {title}\n"
+        f"KIỂU XỬ LÝ SẮP DÙNG: {input_mode_description}\n"
+        "MỤC TIÊU: lập một HỒ SƠ THAM CHIẾU GỌN NHƯNG HỮU ÍCH gồm: "
+        "(1) nhân vật chính/phụ: tên gốc, cách viết tiếng Việt đề xuất, biệt danh/biến thể tên, quan hệ và vai trò đã xác nhận; "
+        "(2) đại từ xưng hô, cấp bậc, cách gọi giữa các nhân vật; "
+        "(3) địa danh, môn phái, tổ chức, chức danh, bảo vật, thuật ngữ và cách chuyển ngữ thống nhất; "
+        "(4) bối cảnh, sự kiện và quan hệ cần nhớ để không nhầm ở các chương tiếp theo; "
+        "(5) quy tắc văn phong phù hợp với thể loại; "
+        "(6) danh sách điểm chưa chắc chắn cần kiểm tra lại khi có ngữ cảnh mới. "
+        "Với mỗi tên/thuật ngữ quan trọng, đưa ra một cách viết tiếng Việt chuẩn và giữ nguyên cách đó trong các lượt sau. "
+        "Không cần lập danh sách mọi từ thông thường.\n"
+        "Đây chỉ là tài liệu chuẩn bị, KHÔNG được dịch hay viết lại các trích đoạn bên dưới. Không kể lại/tóm tắt truyện dài dòng.\n\n"
+        "TỪ ĐIỂN ĐÃ CÓ (nếu có):\n" + glossary_text + "\n\n"
+        "TIÊU ĐỀ VÀ TRÍCH ĐOẠN MẪU TỪ FILE NGUỒN (chỉ để nhận diện truyện và chuẩn bị dữ liệu):\n"
+        + preview_text + "\n\n"
+        "Hãy trả về hồ sơ tham chiếu có cấu trúc, ưu tiên tên gốc ↔ tên tiếng Việt ↔ vai trò/quan hệ và thuật ngữ. "
+        "Ở các tin nhắn tiếp theo, khi người dùng gửi từng lô chương, hãy dùng hồ sơ này làm dữ liệu nhất quán, cập nhật khi văn bản mới xác nhận điều gì đó, nhưng không tự đưa hồ sơ hay phần đã dịch trước vào bản dịch. "
+        "Chỉ trả về hồ sơ tham chiếu, không chào hỏi, không dịch mẫu."
+    )
+
+
+def build_clipboard_translation_prompt(
+    source_chunk: str,
+    glossary: dict[str, str],
+    previous_translation: str = "",
+    story_context: str = "",
+    source_mode: str = "Dịch raw Trung",
+    novel_title: str = "",
+    batch_number: int = 1,
+    batch_total: int = 1,
+) -> str:
+    glossary_lines = _matching_glossary_lines(source_chunk, glossary, source_mode)
+    title_text = novel_title.strip() or "chưa đặt tên"
+    previous_context = ""
+    if previous_translation.strip():
+        previous_context = (
+            "NGỮ CẢNH RẤT NGẮN TỪ BẢN DỊCH TRƯỚC (chỉ dùng để hiểu mạch và xưng hô; TUYỆT ĐỐI KHÔNG lặp lại hoặc dịch lại phần này):\n"
+            + previous_translation[-1200:].strip() + "\n\n"
+        )
+    reference_context = ""
+    if story_context.strip():
+        reference_context = (
+            "HỒ SƠ THAM CHIẾU TRUYỆN DO BẠN LẬP Ở BƯỚC CHUẨN BỊ (dùng thống nhất tên/thuật ngữ; không chép hồ sơ vào bản dịch):\n"
+            + story_context.strip()[:24000] + "\n\n"
+        )
+    common_rules = (
+        f"Tên truyện: {title_text}. Đây là lượt {batch_number}/{batch_total} trong một đợt xử lý.\n"
+        "Bạn phải làm việc như một biên dịch viên/biên tập viên tiểu thuyết chuyên nghiệp, viết ra văn xuôi tiếng Việt tự nhiên, mạch lạc, trau chuốt như người thật làm; không bám máy móc vào trật tự câu của bản máy dịch/tiếng Trung.\n"
+        "CHỈ xử lý phần văn bản trong khối NGUYÊN VĂN CẦN XỬ LÝ ở cuối prompt này. Không lấy lại, không nhắc lại, không viết tiếp, không dịch lại bất kỳ chương/đoạn nào đã xuất hiện ở tin nhắn trước. Không bịa thêm, không suy diễn, không tự bổ sung tình tiết; cũng tuyệt đối không cắt bớt, tóm tắt hay lược bỏ chi tiết có trong nội dung truyện.\n"
+        "Giữ nguyên thứ tự chương, tiêu đề chương có ý nghĩa, bố cục và ranh giới đoạn gần với bản gốc; không chia thành nhiều dòng vụn không cần thiết. Không dùng chữ đậm, không bọc trong Markdown/code block, không có lời dẫn, lời kết, nhận xét, giải thích hay ghi chú của bạn. Chỉ xuất nội dung cuối cùng đã dịch/biên tập.\n"
+        + ARTIFACT_REMOVAL_RULES + "\n\n"
+        "TỪ ĐIỂN TRUNG → VIỆT / TÊN THUẬT NGỮ KHỚP ĐOẠN NÀY:\n"
+        + glossary_lines + "\n\n"
+        + reference_context
+        + previous_context
+    )
+    if source_mode == "Viết lại convert":
+        task = (
+            "NHIỆM VỤ: VIẾT LẠI BẢN CONVERT TIẾNG VIỆT.\n"
+            "Đầu vào đã là bản convert/ dịch thô tiếng Việt; KHÔNG dịch lại từ tiếng Trung và không biến thành một bản tóm tắt. "
+            "Hãy biên tập lại toàn bộ phần được gửi thành văn xuôi tiểu thuyết Việt tự nhiên, sửa trật tự câu, cách dùng từ, ngữ pháp, lời thoại và nhịp kể đang cứng/lủng củng; "
+            "giữ nguyên ngôi kể, sắc thái, quan hệ, thông tin và mức độ chi tiết. Không tự ý thay đổi tính cách nhân vật hay cách xưng hô đã được xác lập.\n"
+            "Bản convert có thể chứa chuỗi rác, dấu phân cách trang trí, watermark, nguồn ebook, quảng cáo, PS, chú thích ngoài truyện hoặc chữ như 'Hết chương' ở cuối; bỏ những phần ngoài truyện theo quy tắc bên trên. "
+            "Không xóa tiêu đề chương hay câu văn thật sự thuộc nội dung truyện. Không in đậm bất cứ phần nào.\n"
+        )
+    else:
+        task = (
+            "NHIỆM VỤ: DỊCH RAW TIẾNG TRUNG SANG TIẾNG VIỆT.\n"
+            "Dịch đầy đủ và chính xác ý nghĩa của nguyên văn tiếng Trung thành văn xuôi tiểu thuyết Việt tự nhiên, trau chuốt. "
+            "Không dịch word-by-word hoặc giữ trật tự câu Trung nếu khiến tiếng Việt gượng; nhưng không đổi nội dung, góc nhìn, sắc thái, thông tin hay mức độ chi tiết. "
+            "Dùng Hán-Việt/cách gọi đã có trong hồ sơ khi phù hợp, giữ nhất quán tên nhân vật và thuật ngữ. Không rút gọn hay tóm tắt.\n"
+            "Không dịch/chép các phần ngoài truyện như quảng cáo nền tảng, lời tác giả/PS, chú thích người đăng, dòng nguồn, '本章完'/ 'Hết chương' hoặc chuỗi ký tự rác theo quy tắc trên; không được nhầm chúng với tình tiết thật trong truyện. Không in đậm bất cứ phần nào.\n"
+        )
+    return (
+        common_rules + task +
+        "\nNGUYÊN VĂN CẦN XỬ LÝ — CHỈ XỬ LÝ KHỐI NÀY:\n"
+        "<<<BEGIN_STORY_TEXT>>>\n" + source_chunk + "\n<<<END_STORY_TEXT>>>\n"
+        "Chỉ xuất nội dung đã dịch/viết lại của khối trên; không xuất các dấu BEGIN_STORY_TEXT/END_STORY_TEXT."
+    )
 
 
 def build_clipboard_translation_prompt(
