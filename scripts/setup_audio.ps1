@@ -18,5 +18,7 @@ if (-not (Test-Path (Join-Path $Venv "Scripts\python.exe"))) { & $Python -m venv
 $VenvPython = Join-Path $Venv "Scripts\python.exe"
 & $VenvPython -m pip install -r (Join-Path $Repo "requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw "Cai thu vien audio that bai." }
-Write-Host "Da cai xong thu vien audio." -ForegroundColor Green
+& $VenvPython -m pip install imageio-ffmpeg
+if ($LASTEXITCODE -ne 0) { throw "Cai cong cu ghep MP3 that bai." }
+Write-Host "Da cai xong thu vien audio va cong cu ghep cac phan thanh mot file MP3." -ForegroundColor Green
 Read-Host "Nhan Enter de dong"
