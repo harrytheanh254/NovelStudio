@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import sys
+import traceback
 from pathlib import Path
 
 # Windows consoles may use a legacy code page that cannot print Vietnamese text.
@@ -285,6 +286,14 @@ def main() -> int:
         print(f"[SUCCESS] Đã lưu bản dịch: {output_path}", flush=True)
         return 0
     except Exception as exc:
+        # Keep the full traceback in UTF-8 so the desktop app can diagnose failures
+        # even when a third-party library hits a Windows legacy-code-page issue.
+        try:
+            log_path = ROOT_DIR / "logs" / "translation_error.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(traceback.format_exc(), encoding="utf-8")
+        except Exception:
+            pass
         print(f"[ERROR] {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
         return 1
 
