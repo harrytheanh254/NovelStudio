@@ -72,3 +72,41 @@ class ClipboardChunkingTests(unittest.TestCase):
         self.assertTrue(all(separator in (" ", "\r\n\r\n", "\n\n", "\r\n", "\n", "\r", "") 
                             for _chunk, separator in chunks))
         self.assertEqual("".join(chunk for chunk, _separator in chunks), source)
+
+
+class ThreeChapterBatchTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        from pathlib import Path
+        module_path = Path(__file__).resolve().parents[1] / "app-desktop" / "main.py"
+        spec = importlib.util.spec_from_file_location("novelstudio_main_for_chapter_tests", module_path)
+        cls.app_module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(cls.app_module)
+
+    def test_fifteen_chapters_become_five_batches_of_three(self):
+        source = "".join(
+            f"第{number}章 标题{number}\n正文{number}的内容。\n\n"
+            for number in range(1, 16)
+        )
+        chapter_count, batches = self.app_module.split_novel_into_batches(source, chapters_per_batch=3)
+        self.assertEqual(chapter_count, 15)
+        self.assertEqual(len(batches), 5)
+        self.assertEqual("".join(batches), source)
+        for batch_index, batch in enumerate(batches):
+            expected_numbers = range(batch_index * 3 + 1, batch_index * 3 + 4)
+            for number in expected_numbers:
+                self.assertIn(f"第{number}章", batch)
+            self.assertEqual(len(self.app_module.CHAPTER_HEADING_RE.findall(batch)), 3)
+
+    def test_chinese_number_chapters_are_detected(self):
+        source = "第十一章\n第一章内容。\n\n第十二章 标题\n第二章内容。\n\n第十三章\n第三章内容。"
+        count, batches = self.app_module.split_novel_into_batches(source, 3)
+        self.assertEqual(count, 3)
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(batches[0], source)
+
+    def test_missing_chapter_headings_is_reported(self):
+        with self.assertRaisesRegex(ValueError, "Không nhận ra tiêu đề chương"):
+            self.app_module.split_novel_into_batches("Chỉ có văn bản mà không có tiêu đề chương.")
