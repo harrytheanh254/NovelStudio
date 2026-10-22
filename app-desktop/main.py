@@ -511,13 +511,11 @@ class NovelStudioApp:
         # all remaining space even on a smaller screen.
         create_row = tk.Frame(left, bg=PANEL)
         create_row.pack(side="bottom", fill="x", padx=14, pady=(4, 12))
+        # The single primary action uses GitHub Actions, which was much faster
+        # than local Edge-TTS in the user's long-chapter comparison.
         self._button(
-            create_row, "TẠO TRÊN MÁY", self.start_audio_generation,
-            False, width=150
-        )
-        self._button(
-            create_row, "TẠO QUA GITHUB ACTIONS", self.start_audio_generation_github,
-            True, width=205
+            create_row, "TẠO AUDIO", self.start_audio_generation_github,
+            True, width=190
         )
 
         options = tk.Frame(left, bg=PANEL)
