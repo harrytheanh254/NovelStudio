@@ -809,6 +809,314 @@ class NovelStudioApp:
         self._render_audio_status()
         threading.Thread(target=self._audio_worker, args=(job,), daemon=True).start()
 
+    def start_audio_generation_github(self):
+        if self.audio_running:
+            messagebox.showinfo(
+                "Đang tạo audio",
+                "Một audio đang được tạo. Hãy chờ hoàn tất rồi tạo lượt tiếp theo."
+            )
+            return
+        text = self.audio_text.get("1.0", "end-1c").strip()
+        if not text:
+            messagebox.showwarning("Chưa có nội dung", "Hãy dán nội dung hoặc mở một file TXT trước.")
+            return
+        if not shutil.which("gh"):
+            messagebox.showerror(
+                "Chưa cài GitHub CLI",
+                "Để tạo audio bằng GitHub Actions, cần cài GitHub CLI rồi đăng nhập một lần.\n\n"
+                "1. Mở PowerShell và chạy:\n"
+                "winget install --id GitHub.cli -e\n\n"
+                "2. Đóng, mở lại PowerShell rồi chạy:\n"
+                "gh auth login\n\n"
+                "Làm theo hướng dẫn trên màn hình và đăng nhập tài khoản GitHub của bạn."
+            )
+            return
+
+        stem = self.audio_path.stem if self.audio_path else "audio_dai"
+        job_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        request_id = "st-" + uuid.uuid4().hex[:16]
+        job = {
+            "id": job_id,
+            "text": text,
+            "stem": stem,
+            "voice": self.voice_var.get(),
+            "rate": self.rate_var.get(),
+            "state": "generating",
+            "engine": "github",
+            "path": None,
+            "error": None,
+            "progress": "Đang kiểm tra đăng nhập và quyền truy cập GitHub...",
+            "request_id": request_id,
+            "started_at": time.monotonic(),
+            "finished_at": None,
+            "duration_seconds": None,
+        }
+        self.audio_history.append(job)
+        self.audio_running = True
+        self.audio_draft = text
+        self.audio_note.configure(text="Đang chuẩn bị gửi chương lên GitHub Actions...")
+        self.status.set("Đang tạo audio bằng GitHub Actions · vui lòng giữ ứng dụng mở.")
+        self._render_audio_history()
+        self._render_audio_status()
+        threading.Thread(target=self._github_audio_worker, args=(job,), daemon=True).start()
+
+    def _set_audio_job_progress(self, job_id: str, message: str):
+        job = next((item for item in self.audio_history if item["id"] == job_id), None)
+        if job is None:
+            return
+        job["progress"] = message
+        if self.current_page == "audio":
+            try:
+                if self.audio_note.winfo_exists():
+                    self.audio_note.configure(text=message)
+            except tk.TclError:
+                pass
+            self._render_audio_status()
+
+    def _run_github_cli(self, args: list[str], input_text: str | None = None,
+                        timeout: int = 60) -> subprocess.CompletedProcess:
+        executable = shutil.which("gh")
+        if not executable:
+            raise RuntimeError(
+                "Không tìm thấy GitHub CLI (gh). Hãy cài bằng "
+                "'winget install --id GitHub.cli -e', sau đó chạy 'gh auth login'."
+            )
+        try:
+            return subprocess.run(
+                [executable, *args],
+                input=input_text,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+                cwd=str(ROOT_DIR),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("GitHub CLI hết thời gian chờ khi gọi API.") from exc
+
+    def _github_audio_worker(self, job: dict):
+        job_id = job["id"]
+        request_id = job["request_id"]
+        repo = GITHUB_AUDIO_REPO
+        ref = GITHUB_AUDIO_REF
+        download_dir = TEMP_DIR / f"github_audio_{job_id}"
+        try:
+            if repo.count("/") != 1:
+                raise RuntimeError(
+                    "Tên repository GitHub chưa hợp lệ. Hãy dùng dạng owner/repository."
+                )
+
+            auth = self._run_github_cli(["auth", "status", "--hostname", "github.com"])
+            if auth.returncode != 0:
+                detail = (auth.stderr or auth.stdout or "").strip()
+                raise RuntimeError(
+                    "Chưa đăng nhập GitHub CLI. Mở PowerShell, chạy 'gh auth login' "
+                    "và hoàn tất hướng dẫn đăng nhập.\n" + detail[:1200]
+                )
+
+            repo_result = self._run_github_cli(["api", f"repos/{repo}"])
+            if repo_result.returncode != 0:
+                raise RuntimeError(
+                    "Không đọc được repository GitHub. Hãy kiểm tra tài khoản đã đăng nhập "
+                    "có quyền truy cập repository này.\n"
+                    + (repo_result.stderr or repo_result.stdout or "")[-1600:]
+                )
+            try:
+                repo_data = json.loads(repo_result.stdout)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("GitHub trả về thông tin repository không hợp lệ.") from exc
+            if repo_data.get("private") is not True:
+                raise RuntimeError(
+                    f"Repository {repo} hiện đang Public. Vì nội dung chương được gửi lên "
+                    "GitHub Actions, SẢNH TRUYỆN sẽ không gửi văn bản truyện tới repository công khai. "
+                    "Hãy chuyển repository này sang Private trong GitHub Settings, hoặc cấu hình "
+                    "một repository Private có workflow Generate long audio."
+                )
+
+            workflow_path = f"repos/{repo}/actions/workflows/{GITHUB_AUDIO_WORKFLOW}"
+            workflow_info = self._run_github_cli(["api", workflow_path])
+            if workflow_info.returncode != 0:
+                raise RuntimeError(
+                    "Không tìm thấy workflow Generate long audio trong repository.\n"
+                    + (workflow_info.stderr or workflow_info.stdout or "")[-1600:]
+                )
+
+            packed = gzip.compress(job["text"].encode("utf-8"), compresslevel=6, mtime=0)
+            encoded = base64.b64encode(packed).decode("ascii")
+            if len(encoded) > GITHUB_AUDIO_MAX_ENCODED_CHARS:
+                raise RuntimeError(
+                    "Chương này quá lớn để gửi trực tiếp qua dữ liệu workflow_dispatch "
+                    f"({len(encoded):,} ký tự sau nén; giới hạn an toàn "
+                    f"{GITHUB_AUDIO_MAX_ENCODED_CHARS:,}). Không có nội dung nào được gửi. "
+                    "Hãy chia chương thành phần ngắn hơn hoặc dùng quy trình tải tệp lên repository Private."
+                )
+
+            runs_endpoint = (
+                f"repos/{repo}/actions/workflows/{GITHUB_AUDIO_WORKFLOW}/runs"
+                f"?event=workflow_dispatch&branch={ref}&per_page=50"
+            )
+            before_response = self._run_github_cli(["api", runs_endpoint])
+            if before_response.returncode != 0:
+                raise RuntimeError(
+                    "Không đọc được danh sách GitHub Actions.\n"
+                    + (before_response.stderr or before_response.stdout or "")[-1200:]
+                )
+            try:
+                before_runs = json.loads(before_response.stdout).get("workflow_runs", [])
+                before_ids = {int(item["id"]) for item in before_runs}
+            except (json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
+                raise RuntimeError("Danh sách GitHub Actions trả về không hợp lệ.") from exc
+
+            payload = {
+                "ref": ref,
+                "inputs": {
+                    "content_gzip_base64": encoded,
+                    "request_id": request_id,
+                    "voice": job["voice"],
+                    "rate": str(job["rate"]),
+                },
+            }
+            dispatch = self._run_github_cli(
+                [
+                    "api", "--method", "POST",
+                    f"{workflow_path}/dispatches",
+                    "--input", "-",
+                ],
+                input_text=json.dumps(payload, ensure_ascii=False),
+                timeout=90,
+            )
+            if dispatch.returncode != 0:
+                raise RuntimeError(
+                    "Không gửi được tác vụ tới GitHub Actions. Kiểm tra quyền Actions "
+                    "và quyền ghi của tài khoản GitHub.\n"
+                    + (dispatch.stderr or dispatch.stdout or "")[-2000:]
+                )
+
+            self.root.after(
+                0, lambda j=job_id, m="Đã gửi chương lên GitHub · đang chờ runner...":
+                self._set_audio_job_progress(j, m)
+            )
+
+            expected_title = f"SẢNH TRUYỆN {request_id}"
+            discovery_deadline = time.monotonic() + 180
+            remote_run = None
+            while time.monotonic() < discovery_deadline:
+                response = self._run_github_cli(["api", runs_endpoint], timeout=45)
+                if response.returncode == 0:
+                    try:
+                        candidates = json.loads(response.stdout).get("workflow_runs", [])
+                        remote_run = next(
+                            (
+                                item for item in candidates
+                                if int(item.get("id", 0)) not in before_ids
+                                and item.get("display_title") == expected_title
+                            ),
+                            None,
+                        )
+                    except (json.JSONDecodeError, TypeError, ValueError):
+                        remote_run = None
+                if remote_run:
+                    break
+                time.sleep(5)
+            if not remote_run:
+                raise RuntimeError(
+                    "Đã gửi lệnh nhưng không tìm thấy lượt chạy mới trong 3 phút. "
+                    "Hãy mở tab Actions của repository để kiểm tra workflow có được kích hoạt không."
+                )
+
+            run_id = int(remote_run["id"])
+            run_number = int(remote_run["run_number"])
+            self.root.after(
+                0, lambda j=job_id, m=f"GitHub Actions đang tạo audio · run #{run_number}...":
+                self._set_audio_job_progress(j, m)
+            )
+
+            run_deadline = time.monotonic() + 6 * 60 * 60
+            remote_status = "queued"
+            while time.monotonic() < run_deadline:
+                status_result = self._run_github_cli(
+                    ["api", f"repos/{repo}/actions/runs/{run_id}"], timeout=45
+                )
+                if status_result.returncode != 0:
+                    self.root.after(
+                        0, lambda j=job_id, m="Đang chờ GitHub Actions phản hồi...":
+                        self._set_audio_job_progress(j, m)
+                    )
+                    time.sleep(10)
+                    continue
+                try:
+                    status_data = json.loads(status_result.stdout)
+                except json.JSONDecodeError:
+                    time.sleep(10)
+                    continue
+                remote_status = status_data.get("status", "queued")
+                if remote_status == "completed":
+                    conclusion = status_data.get("conclusion")
+                    break
+                self.root.after(
+                    0, lambda j=job_id, m=f"GitHub Actions: {remote_status} · run #{run_number}...":
+                    self._set_audio_job_progress(j, m)
+                )
+                time.sleep(10)
+            else:
+                raise RuntimeError(
+                    "GitHub Actions vẫn chưa hoàn tất sau 6 giờ. Mở trang Actions để xem trạng thái run."
+                )
+
+            if conclusion != "success":
+                logs = self._run_github_cli(
+                    ["run", "view", str(run_id), "--repo", repo, "--log-failed"],
+                    timeout=120,
+                )
+                log_text = (logs.stdout or "") + "\n" + (logs.stderr or "")
+                log_text = log_text.strip()[-2600:]
+                raise RuntimeError(
+                    f"GitHub Actions kết thúc với trạng thái: {conclusion or 'không rõ'} "
+                    f"(run #{run_number}).\n{log_text}"
+                )
+
+            self.root.after(
+                0, lambda j=job_id, m="GitHub tạo xong · đang tải MP3 về máy...":
+                self._set_audio_job_progress(j, m)
+            )
+            if download_dir.exists():
+                shutil.rmtree(download_dir, ignore_errors=True)
+            download_dir.mkdir(parents=True, exist_ok=True)
+            downloaded = self._run_github_cli(
+                [
+                    "run", "download", str(run_id), "--repo", repo,
+                    "--name", f"AU {run_number}", "--dir", str(download_dir),
+                ],
+                timeout=180,
+            )
+            if downloaded.returncode != 0:
+                raise RuntimeError(
+                    "GitHub đã tạo xong nhưng không tải được artifact MP3.\n"
+                    + (downloaded.stderr or downloaded.stdout or "")[-1800:]
+                )
+            mp3_files = list(download_dir.rglob("*.mp3"))
+            if not mp3_files:
+                raise RuntimeError(
+                    "Artifact của GitHub đã tải về nhưng không tìm thấy file MP3 bên trong."
+                )
+
+            AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            safe_stem = self._safe_audio_stem(job["stem"])
+            output_path = AUDIO_DIR / f"{safe_stem}_{job_id}.mp3"
+            shutil.copy2(mp3_files[0], output_path)
+            self.root.after(
+                0, lambda j=job_id, p=output_path: self._complete_audio_job(j, p)
+            )
+        except Exception as exc:
+            detail = str(exc).strip() or type(exc).__name__
+            self.root.after(
+                0, lambda j=job_id, d=detail: self._fail_audio_job(j, d)
+            )
+        finally:
+            if download_dir.exists():
+                shutil.rmtree(download_dir, ignore_errors=True)
+
     @staticmethod
     def _safe_audio_stem(stem: str) -> str:
         # Remove Windows-invalid filename characters while preserving Vietnamese.
