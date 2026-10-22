@@ -454,7 +454,7 @@ class NovelStudioApp:
 
     def show_audio(self):
         page = self._clear("audio")
-        self._heading(page, "03 / Listen", "Tạo audio", "TXT tiếng Việt → các phần MP3. Cần Internet cho Edge-TTS.")
+        self._heading(page, "03 / Listen", "Tạo audio", "Chọn nhiều chương TXT; Vietnamese-Long-Audio-TTS tạo một MP3 hoàn chỉnh cho từng chương. Cần Internet.")
         control = self._panel(page, "NỘI DUNG VÀ THIẾT LẬP", "Nên bắt đầu với một chương. Văn bản dài sẽ được chia thành nhiều phần để giảm lỗi dịch vụ.")
         control.pack(fill="x", padx=26, pady=(0, 10))
         bar = tk.Frame(control, bg=PANEL); bar.pack(fill="x", padx=16, pady=(0, 10))
@@ -485,7 +485,7 @@ class NovelStudioApp:
                                   relief="flat", font=(FONT, 10), padx=12, pady=12,
                                   highlightbackground=BORDER, highlightthickness=1)
         self.audio_text.pack(fill="x", expand=False, padx=26, pady=(0, 10))
-        queue_panel = self._panel(page, "HÀNG ĐỢI AUDIO", "Mỗi chương có thể tạo thành nhiều phần MP3. Chọn kết quả rồi bấm nghe thử hoặc mở thư mục.")
+        queue_panel = self._panel(page, "HÀNG ĐỢI AUDIO", "Có thể chọn 15 file TXT cùng lúc; mỗi file sẽ thành một MP3 riêng. Chọn kết quả hoàn chỉnh để nghe hoặc mở file.")
         queue_panel.pack(fill="both", expand=True, padx=26, pady=(0, 8))
         self.audio_list = tk.Listbox(queue_panel, bg="#0E0A09", fg=INK, selectbackground="#641A23",
                                      relief="flat", height=4, font=(FONT, 9), activestyle="none")
@@ -663,13 +663,13 @@ class NovelStudioApp:
     def _audio_generation_finished(self, failed: list[str]):
         self.audio_running = False
         if failed:
-            self.audio_note.configure(text=f"Chưa hoàn tất · {len(failed)} phần audio/ghép bị lỗi")
+            self.audio_note.configure(text=f"Chưa hoàn tất · {len(failed)} chương audio bị lỗi")
             self.status.set("Audio hoàn thành một phần; xem chi tiết trong hàng đợi.")
-            messagebox.showwarning("Một số phần audio thất bại", "\n\n".join(failed[:4]))
+            messagebox.showwarning("Một số chương audio thất bại", "\n\n".join(failed[:4]))
         else:
             self.audio_note.configure(text="Hoàn thành · Có thể chọn file MP3 để nghe.")
             self.status.set("Tạo audio hoàn tất.")
-            messagebox.showinfo("Audio hoàn tất", "Đã ghép xong một file MP3 hoàn chỉnh cho mỗi tác vụ. Chọn dòng MP3 hoàn chỉnh rồi bấm NGHE / MỞ KẾT QUẢ.")
+            messagebox.showinfo("Audio hoàn tất", "Đã tạo xong một file MP3 hoàn chỉnh cho mỗi chương thành công. Chọn file rồi bấm NGHE / MỞ KẾT QUẢ.")
 
     def open_selected_audio_output(self):
         try:
