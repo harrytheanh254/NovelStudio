@@ -49,6 +49,7 @@ EPUB2TXT_EXE = ROOT_DIR / "envs" / "epub2txt" / "Scripts" / "epub2txt.exe"
 TRANSLATION_PYTHON = ROOT_DIR / "envs" / "translation" / "Scripts" / "python.exe"
 AUDIO_PYTHON = ROOT_DIR / "envs" / "audio-tts" / "Scripts" / "python.exe"
 TRANSLATION_SCRIPT = ROOT_DIR / "scripts" / "translate_hachimi.py"
+CHATGPT_TRANSLATION_SCRIPT = ROOT_DIR / "scripts" / "chatgpt_translation.py"
 AUDIO_WORKER_SCRIPT = ROOT_DIR / "scripts" / "audio_worker.py"
 AUDIO_TTS_GENERATOR = ROOT_DIR / "vendor" / "Vietnamese-Long-Audio-TTS" / "generate_audio.py"
 MERGE_AUDIO_SCRIPT = ROOT_DIR / "scripts" / "merge_audio.py"
@@ -358,10 +359,12 @@ class NovelStudioApp:
 
     def show_translate(self):
         page = self._clear("translate")
-        self._heading(page, "02 / Translate", "Dịch truyện", "Chọn TXT tiếng Trung; mô hình HachimiMT-60 chạy CPU INT8 cục bộ.")
+        self._heading(page, "02 / Translate", "Dịch truyện", "Chọn dịch cục bộ hoặc dịch văn học qua ChatGPT. Chế độ ChatGPT yêu cầu tài khoản được cấp quyền sử dụng.")
         tools = tk.Frame(page, bg=BG); tools.pack(fill="x", padx=26, pady=(0, 8))
         self._button(tools, "NẠP FILE RAW TXT", self.load_raw_file, True)
         self._button(tools, "MỞ THƯ MỤC BẢN DỊCH", lambda: self.open_folder(TRANSLATED_DIR))
+        self._button(tools, "KẾT NỐI CHATGPT", self.start_chatgpt_login)
+        self._button(tools, "NGẮT CHATGPT", self.start_chatgpt_logout)
         profile = tk.Frame(page, bg=BG); profile.pack(fill="x", padx=26, pady=(0, 10))
         tk.Label(profile, text="TỪ ĐIỂN BỘ TRUYỆN", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
@@ -371,6 +374,16 @@ class NovelStudioApp:
                      values=("Lâm Thánh", "Vớt Thi Nhân", "Từ điển chung"),
                      state="readonly", width=18, style="Dark.TCombobox").pack(side="left")
         tk.Label(profile, text="Chọn đúng truyện để giữ tên riêng và thuật ngữ nhất quán.",
+                 bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
+        mode = tk.Frame(page, bg=BG); mode.pack(fill="x", padx=26, pady=(0, 8))
+        tk.Label(mode, text="CHẾ ĐỘ DỊCH", bg=BG, fg=BRASS,
+                 font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
+        if not hasattr(self, "translation_mode_var"):
+            self.translation_mode_var = tk.StringVar(value="HachimiMT-60 · Cục bộ")
+        ttk.Combobox(mode, textvariable=self.translation_mode_var,
+                     values=("HachimiMT-60 · Cục bộ", "ChatGPT · Dịch văn học"),
+                     state="readonly", width=25, style="Dark.TCombobox").pack(side="left")
+        tk.Label(mode, text="ChatGPT gửi nội dung chương đến OpenAI; chỉ dùng khi bạn đồng ý.",
                  bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
         bottom = tk.Frame(page, bg=BG); bottom.pack(fill="x", padx=26, pady=10)
         panes = tk.Frame(page, bg=BG); panes.pack(fill="both", expand=True, padx=26, pady=4)
@@ -434,9 +447,141 @@ class NovelStudioApp:
         source.write_text(raw, encoding="utf-8")
         output = TRANSLATED_DIR / ((self.raw_path.stem if self.raw_path else "ban_dich") + "_vi.txt")
         self.translation_running = True
-        self.translate_note.configure(text=f"Đang dịch bằng từ điển: {profile_name}. Lần đầu cần tải mô hình về máy.")
-        self.status.set(f"Đang dịch bằng HachimiMT-60 CPU INT8 · {profile_name}...")
-        threading.Thread(target=self._translation_worker, args=(source, output, glossary_path), daemon=True).start()
+        if self.translation_mode_var.get().startswith("ChatGPT"):
+            self.translate_note.configure(text=f"Đang chuẩn bị dịch văn học bằng ChatGPT · {profile_name}...")
+            self.status.set(f"Đang dịch văn học qua ChatGPT · {profile_name}...")
+            threading.Thread(
+                target=self._chatgpt_translation_worker,
+                args=(source, output, glossary_path),
+                daemon=True
+            ).start()
+        else:
+            self.translate_note.configure(text=f"Đang dịch bằng từ điển: {profile_name}. Lần đầu cần tải mô hình về máy.")
+            self.status.set(f"Đang dịch bằng HachimiMT-60 CPU INT8 · {profile_name}...")
+            threading.Thread(target=self._translation_worker, args=(source, output, glossary_path), daemon=True).start()
+
+    def _start_chatgpt_account_command(self, command: str):
+        if self.translation_running:
+            messagebox.showwarning("Đang xử lý", "Hãy đợi tác vụ hiện tại hoàn tất trước khi thay đổi kết nối ChatGPT.")
+            return
+        if not TRANSLATION_PYTHON.is_file():
+            messagebox.showerror(
+                "Chưa cài bộ dịch",
+                f"Không tìm thấy môi trường Python:\n{TRANSLATION_PYTHON}\n\n"
+                "Hãy chạy scripts\\setup_translation.ps1 để cài thư viện tích hợp ChatGPT."
+            )
+            return
+        if not CHATGPT_TRANSLATION_SCRIPT.is_file():
+            messagebox.showerror("Thiếu mô-đun ChatGPT", f"Không tìm thấy file:\n{CHATGPT_TRANSLATION_SCRIPT}")
+            return
+        action_text = "Đang mở đăng nhập ChatGPT..." if command == "login" else "Đang ngắt kết nối ChatGPT..."
+        self.translation_running = True
+        self.translate_note.configure(text=action_text)
+        self.status.set(action_text)
+        threading.Thread(
+            target=self._chatgpt_account_command_worker, args=(command,), daemon=True
+        ).start()
+
+    def start_chatgpt_login(self):
+        if not messagebox.askyesno(
+            "Kết nối ChatGPT",
+            "SẢNH TRUYỆN sẽ mở trang OpenAI để bạn đăng nhập và xem các quyền được yêu cầu. "
+            "Văn bản truyện chỉ được gửi đi khi bạn chọn chế độ ChatGPT và bấm BẮT ĐẦU DỊCH.\n\n"
+            "Tính năng dùng hạn mức ChatGPT hiện chỉ dành cho tài khoản/workspace đủ điều kiện (thường là Plus/Pro). "
+            "Tài khoản Free có thể đăng nhập nhưng không được bảo đảm quyền dịch.\n\nTiếp tục?"
+        ):
+            return
+        self._start_chatgpt_account_command("login")
+
+    def start_chatgpt_logout(self):
+        if not messagebox.askyesno(
+            "Ngắt kết nối ChatGPT",
+            "SẢNH TRUYỆN sẽ thử thu hồi phiên đăng nhập rồi xóa thông tin xác thực đã lưu trên máy này. Tiếp tục?"
+        ):
+            return
+        self._start_chatgpt_account_command("logout")
+
+    def _set_chatgpt_progress(self, text: str):
+        try:
+            note = getattr(self, "translate_note", None)
+            if note is not None and note.winfo_exists():
+                note.configure(text=text)
+            self.status.set(text)
+        except tk.TclError:
+            pass
+
+    def _chatgpt_account_command_worker(self, command: str):
+        lines = []
+        try:
+            proc = subprocess.Popen(
+                [str(TRANSLATION_PYTHON), "-X", "utf8", str(CHATGPT_TRANSLATION_SCRIPT), command],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
+                cwd=str(ROOT_DIR)
+            )
+            assert proc.stdout is not None
+            for raw_line in proc.stdout:
+                line = raw_line.rstrip()
+                if not line:
+                    continue
+                lines.append(line)
+                if line.startswith("[STATUS]"):
+                    self.root.after(0, lambda detail=line: self._set_chatgpt_progress(detail[8:].strip()))
+            return_code = proc.wait()
+            output = "\n".join(lines[-30:])
+            self.root.after(0, lambda: self._chatgpt_account_command_finished(command, return_code, output))
+        except Exception as exc:
+            self.root.after(0, lambda detail=str(exc): self._chatgpt_account_command_finished(command, 1, detail))
+
+    def _chatgpt_account_command_finished(self, command: str, return_code: int, detail: str):
+        self.translation_running = False
+        if return_code == 0:
+            self.status.set("Đã cập nhật kết nối ChatGPT.")
+            if command == "logout":
+                messagebox.showinfo("Đã ngắt kết nối", detail or "Đã xóa thông tin đăng nhập ChatGPT khỏi máy này.")
+            elif "[WARNING]" in detail:
+                messagebox.showwarning(
+                    "Đã đăng nhập nhưng chưa có quyền dịch",
+                    detail + "\n\nBạn có thể dùng chế độ HachimiMT-60. Muốn dịch qua hạn mức ChatGPT, tài khoản/workspace cần được OpenAI cấp quyền."
+                )
+            else:
+                messagebox.showinfo("Kết nối thành công", detail or "Đã kết nối ChatGPT. Chọn “ChatGPT · Dịch văn học” để dùng.")
+            self._set_chatgpt_progress("Đã hoàn tất thao tác ChatGPT.")
+        else:
+            self.status.set("Thao tác ChatGPT thất bại.")
+            self._set_chatgpt_progress("Thao tác ChatGPT thất bại.")
+            messagebox.showerror("Không hoàn tất được ChatGPT", detail or "Không có thông tin lỗi.")
+
+    def _chatgpt_translation_worker(self, source: Path, output: Path, glossary_path: Path):
+        lines = []
+        try:
+            proc = subprocess.Popen(
+                [
+                    str(TRANSLATION_PYTHON), "-X", "utf8", str(CHATGPT_TRANSLATION_SCRIPT),
+                    "translate", "--input", str(source), "--output", str(output),
+                    "--glossary", str(glossary_path)
+                ],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", bufsize=1,
+                cwd=str(ROOT_DIR)
+            )
+            assert proc.stdout is not None
+            for raw_line in proc.stdout:
+                line = raw_line.rstrip()
+                if not line:
+                    continue
+                lines.append(line)
+                if line.startswith("[STATUS]"):
+                    self.root.after(0, lambda detail=line: self._set_chatgpt_progress(detail[8:].strip()))
+                elif line.startswith("[PROGRESS]"):
+                    self.root.after(0, lambda detail=line: self._set_chatgpt_progress("Đang dịch văn học · " + detail[10:].strip()))
+            return_code = proc.wait()
+            if return_code != 0:
+                raise RuntimeError("\n".join(lines[-30:]) or "Dịch qua ChatGPT thất bại.")
+            translated = output.read_text(encoding="utf-8")
+            self.root.after(0, lambda: self._translation_succeeded(output, translated))
+        except Exception as exc:
+            self.root.after(0, lambda detail=str(exc): self._translation_failed(detail))
 
     def _translation_worker(self, source: Path, output: Path, glossary_path: Path):
         try:
