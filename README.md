@@ -58,14 +58,14 @@ If your Python 3.12 path differs, edit the `$Python` variable in the setup scrip
 - Uses the CTranslate2 `ct2-int8_float32` model on CPU.
 - The first translation downloads model files to `D:\NovelStudio\models\huggingface`.
 - Machine translation can mistranslate prose, pronouns, and specialist terminology. Review output before publishing.
-- Exact names/terms can be protected with `config/glossary_zh_vi.json`, a JSON mapping from Chinese text to the desired Vietnamese spelling. Matching source phrases are replaced with placeholders before translation, then restored exactly afterward. The starter glossary has names from Ma Thổi Đèn / Đạo Mộ Bút Ký; edit or remove entries for the novel you are translating.
+- Exact names/terms can be protected with JSON glossaries in `config/`. The translation screen lets you select a per-novel glossary: `glossary_lam_thanh.json`, `glossary_vot_thi_nhan.json`, or the shared `glossary_zh_vi.json`. Matching source phrases are replaced with placeholders before translation, then restored exactly afterward. These are starter dictionaries; add or correct entries as new characters and terms appear.
 - Model card declares CC BY 4.0; see `THIRD_PARTY_NOTICES.md`.
 
 ## Known limitations
 
 - Edge-TTS needs an internet connection and can fail due to connection issues or service-side limits.
 - Long audio is saved as multiple MP3 parts, not merged into one file.
-- Translation has no chapter-context memory; the glossary only protects exact phrases that are listed and does not make the small model's general prose more fluent.
+- Translation has no chapter-context memory; the glossary only protects exact phrases that are listed and does not make the small model's general prose more fluent. Select the correct novel profile before each translation.
 - No Windows installer is included yet.
 - The UI and backends still need end-to-end testing on the target PC.
 
