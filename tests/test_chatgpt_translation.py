@@ -40,3 +40,35 @@ class ChunkingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClipboardChunkingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        from pathlib import Path
+        module_path = Path(__file__).resolve().parents[1] / "app-desktop" / "main.py"
+        spec = importlib.util.spec_from_file_location("novelstudio_main_for_tests", module_path)
+        cls.app_module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(cls.app_module)
+
+    def test_clipboard_chunking_preserves_source_exactly(self):
+        samples = [
+            "第一段。\n\n第二段。\r\n\r\n第三段。\n",
+            "这是一大段没有换行的故事。" * 1500,
+            "他说：“等等！”她停了下来。\r\n下一段开始。\r\n\r\n最后一段。",
+            "",
+        ]
+        for sample in samples:
+            with self.subTest(length=len(sample)):
+                chunks = self.app_module.split_text_for_clipboard_translation(sample, max_chars=600)
+                self.assertEqual("".join(chunk for chunk, _separator in chunks), sample)
+                self.assertEqual(len(chunks), len(chunks))
+
+    def test_clipboard_chunking_separators_are_known_line_breaks_or_spaces(self):
+        source = ("第一段。\n\n" + "没有换行的句子。" * 100 + "\n第二段。") * 20
+        chunks = self.app_module.split_text_for_clipboard_translation(source, max_chars=700)
+        self.assertTrue(all(separator in (" ", "\r\n\r\n", "\n\n", "\r\n", "\n", "\r", "") 
+                            for _chunk, separator in chunks))
+        self.assertEqual("".join(chunk for chunk, _separator in chunks), source)
