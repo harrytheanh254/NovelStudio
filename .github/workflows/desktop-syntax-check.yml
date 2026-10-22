@@ -1,0 +1,29 @@
+name: Desktop Python syntax check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app-desktop/**/*.py"
+      - "scripts/**/*.py"
+      - ".github/workflows/desktop-syntax-check.yml"
+  pull_request:
+    paths:
+      - "app-desktop/**/*.py"
+      - "scripts/**/*.py"
+      - ".github/workflows/desktop-syntax-check.yml"
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile desktop app and Python scripts
+        run: |
+          python -m py_compile app-desktop/main.py
+          python -m compileall -q scripts
