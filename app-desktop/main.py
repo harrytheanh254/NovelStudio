@@ -413,6 +413,8 @@ class NovelStudioApp:
                         foreground=INK, arrowcolor=BRASS, padding=7)
         style.map("Dark.TCombobox", fieldbackground=[("readonly", PANEL2)],
                   foreground=[("readonly", INK)], selectbackground=[("readonly", RED)])
+        style.configure("Dark.TEntry", fieldbackground=PANEL2, background=PANEL2,
+                        foreground=INK, insertcolor=INK, padding=6)
 
     def _shell(self):
         top = tk.Frame(self.root, bg="#0D0908", height=56,
@@ -650,7 +652,7 @@ class NovelStudioApp:
         tk.Label(profile, text="TÊN TRUYỆN", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(10, 5))
         ttk.Entry(profile, textvariable=self.story_title_var, width=20,
-                  style="Dark.TCombobox").pack(side="left")
+                  style="Dark.TEntry").pack(side="left")
         mode = tk.Frame(page, bg=BG); mode.pack(fill="x", padx=26, pady=(0, 8))
         tk.Label(mode, text="CHẾ ĐỘ DỊCH", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
@@ -659,7 +661,7 @@ class NovelStudioApp:
         ttk.Combobox(mode, textvariable=self.translation_mode_var,
                      values=("HachimiMT-60 · Cục bộ", "ChatGPT · Dịch văn học", "ChatGPT · Qua clipboard"),
                      state="readonly", width=25, style="Dark.TCombobox").pack(side="left")
-        tk.Label(mode, text="ChatGPT gửi nội dung chương đến OpenAI; chỉ dùng khi bạn đồng ý.",
+        tk.Label(mode, text="Hai kiểu nguồn dùng với ChatGPT · Qua clipboard; Hachimi dịch raw Trung cục bộ.",
                  bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
         bottom = tk.Frame(page, bg=BG); bottom.pack(fill="x", padx=26, pady=10)
         panes = tk.Frame(page, bg=BG); panes.pack(fill="both", expand=True, padx=26, pady=4)
