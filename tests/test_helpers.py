@@ -63,6 +63,13 @@ def test_translation_never_sends_glossary_term_to_model():
     assert translated == "Nhan Thì Tự <看向前方。>"
 
 
+def test_ffmpeg_concat_quote_handles_apostrophe():
+    module = load_module("merge_audio", ROOT / "scripts" / "merge_audio.py")
+    quoted = module.concat_quote(Path("D:/NovelStudio/author's story/chapter 1.mp3"))
+    assert quoted.startswith("'") and quoted.endswith("'")
+    assert "'\\''" in quoted
+
+
 def test_audio_split_does_not_drop_text():
     module = load_module("app_main", ROOT / "app-desktop" / "main.py")
     source = ("第一句话。第二句话！第三句话？\n\n" * 100).strip()
@@ -78,4 +85,5 @@ if __name__ == "__main__":
     test_translation_never_sends_glossary_term_to_model()
     test_glossary_protects_and_restores_character_names()
     test_audio_split_does_not_drop_text()
+    test_ffmpeg_concat_quote_handles_apostrophe()
     print("Helper tests passed.")
