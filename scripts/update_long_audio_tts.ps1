@@ -24,11 +24,23 @@ if ($GhCommand) {
 
 Write-Host "Dang tai bo tao audio tu $AudioRepo..."
 if ($GhAuthenticated) {
-    # Use authenticated GitHub API so this updater also works after the repo is Private.
-    & gh api --header "Accept: application/vnd.github.raw" --output $GeneratorPath "repos/$AudioRepo/contents/generate_audio.py?ref=main"
-    if ($LASTEXITCODE -ne 0) { throw "Khong tai duoc generate_audio.py qua GitHub CLI." }
-    & gh api --header "Accept: application/vnd.github.raw" --output $RequirementsPath "repos/$AudioRepo/contents/requirements.txt?ref=main"
-    if ($LASTEXITCODE -ne 0) { throw "Khong tai duoc requirements.txt qua GitHub CLI." }
+    # Use the authenticated Contents API so this updater also works after the repo is Private.
+    $GeneratorBase64 = & gh api "repos/$AudioRepo/contents/generate_audio.py?ref=main" --jq .content
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($GeneratorBase64 -join ""))) {
+        throw "Khong tai duoc generate_audio.py qua GitHub CLI."
+    }
+    $RequirementsBase64 = & gh api "repos/$AudioRepo/contents/requirements.txt?ref=main" --jq .content
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($RequirementsBase64 -join ""))) {
+        throw "Khong tai duoc requirements.txt qua GitHub CLI."
+    }
+    try {
+        $GeneratorEncoded = (($GeneratorBase64 -join "") -replace "\s", "")
+        $RequirementsEncoded = (($RequirementsBase64 -join "") -replace "\s", "")
+        [System.IO.File]::WriteAllBytes($GeneratorPath, [Convert]::FromBase64String($GeneratorEncoded))
+        [System.IO.File]::WriteAllBytes($RequirementsPath, [Convert]::FromBase64String($RequirementsEncoded))
+    } catch {
+        throw "Khong giai ma duoc file tai tu GitHub API: $($_.Exception.Message)"
+    }
 } else {
     # Anonymous raw download remains available for a public repository.
     try {
