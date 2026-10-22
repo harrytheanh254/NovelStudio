@@ -35,6 +35,20 @@ def test_glossary_protects_and_restores_character_names():
     assert module.restore_glossary(spaced_marker, {marker: "Ngô Tà"}) == "Ngô Tà"
 
 
+def test_per_novel_glossaries_protect_core_terms():
+    module = load_module("translate_hachimi_profiles", ROOT / "scripts" / "translate_hachimi.py")
+    cases = [
+        ("glossary_lam_thanh.json", "颜时序", "Nhan Thì Tự"),
+        ("glossary_vot_thi_nhan.json", "李追远", "Lý Truy Viễn"),
+    ]
+    for filename, source_term, target_term in cases:
+        glossary = module.load_glossary(ROOT / "config" / filename)
+        assert glossary[source_term] == target_term
+        protected, targets = module.protect_glossary("人物：" + source_term, glossary)
+        restored = module.restore_glossary(protected, targets)
+        assert restored == "人物：" + target_term
+
+
 def test_audio_split_does_not_drop_text():
     module = load_module("app_main", ROOT / "app-desktop" / "main.py")
     source = ("第一句话。第二句话！第三句话？\n\n" * 100).strip()
@@ -46,6 +60,7 @@ def test_audio_split_does_not_drop_text():
 
 if __name__ == "__main__":
     test_translation_split_preserves_content()
+    test_per_novel_glossaries_protect_core_terms()
     test_glossary_protects_and_restores_character_names()
     test_audio_split_does_not_drop_text()
     print("Helper tests passed.")
