@@ -320,8 +320,11 @@ def login() -> int:
         discovery = load_discovery()
         jwks_client = jwt.PyJWKClient(discovery["jwks_uri"], timeout=15)
         signing_key = jwks_client.get_signing_key_from_jwt(id_token).key
+        signing_algorithm = getattr(signing_key, "algorithm_name", None)
+        if signing_algorithm not in {"RS256", "ES256", "PS256"}:
+            raise RuntimeError("Thuật toán ký ID token không nằm trong danh sách được hỗ trợ.")
         claims = jwt.decode(
-            id_token, signing_key, algorithms=["RS256"], audience=client_id,
+            id_token, signing_key, algorithms=[signing_algorithm], audience=client_id,
             issuer=discovery["issuer"], leeway=5,
             options={"require": ["sub", "exp", "iat"]},
         )
@@ -624,7 +627,9 @@ def translate_file(input_path: Path, output_path: Path, glossary_path: Path) -> 
         trailing_newlines = original_chunk[len(body):]
         if not body.strip():
             translated_chunks.append(original_chunk)
+            print(f"[PROGRESS] {index}/{len(chunks)}", flush=True)
             continue
+        credentials = get_valid_credentials()
         instructions = make_instructions(glossary, body)
         context = previous_translation[-700:].strip()
         user_input = ""
@@ -635,7 +640,12 @@ def translate_file(input_path: Path, output_path: Path, glossary_path: Path) -> 
             )
         user_input += "CHỈ DỊCH PHẦN NGUYÊN VĂN TIẾNG TRUNG SAU ĐÂY:\n" + body
         translated = request_streamed_text(credentials, model, instructions, user_input)
-        translated_chunks.append(translated + trailing_newlines)
+        chunk_result = translated + trailing_newlines
+        if not trailing_newlines and index < len(chunks):
+            # Only long source lines split at a size boundary lack a trailing newline.
+            # Add a Vietnamese word boundary between independently translated pieces.
+            chunk_result += " "
+        translated_chunks.append(chunk_result)
         previous_translation = (previous_translation + "\n" + translated)[-1200:]
         print(f"[PROGRESS] {index}/{len(chunks)}", flush=True)
     translated_text = "".join(translated_chunks)
