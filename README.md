@@ -8,7 +8,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
 
 - **Cào truyện:** opens the real Chrome browser; lets you choose an EPUB and calls the local `epub2txt` executable. Install WebToEpub separately in Chrome.
 - **Dịch truyện:** local Chinese-to-Vietnamese translation using HachimiMT-60 with CTranslate2 INT8 on CPU. Model weights are downloaded from Hugging Face on first use; no paid API key is required.
-- **Tạo audio:** Edge-TTS with Nam Minh or Hoài My. Long text is split into multiple MP3 parts. Parts remain separate; automatic merging is not included.
+- **Tạo audio:** Edge-TTS with Nam Minh or Hoài My. Long text is synthesized in smaller parts and automatically merged into one final MP3 per chapter using the bundled FFmpeg executable from `imageio-ffmpeg`.
 - Keeps raw TXT, translated TXT, EPUB and MP3 outputs in local project folders.
 
 ## Requirements
@@ -64,7 +64,7 @@ If your Python 3.12 path differs, edit the `$Python` variable in the setup scrip
 ## Known limitations
 
 - Edge-TTS needs an internet connection and can fail due to connection issues or service-side limits.
-- Long audio is saved as multiple MP3 parts, not merged into one file.
+- When any speech chunk fails, the app does not create an incomplete final MP3; successful temporary chunks are preserved under the job's `_parts` folder so the failure can be inspected.
 - Translation has no chapter-context memory; the glossary only protects exact phrases that are listed and does not make the small model's general prose more fluent. Select the correct novel profile before each translation.
 - No Windows installer is included yet.
 - The UI and backends still need end-to-end testing on the target PC.
