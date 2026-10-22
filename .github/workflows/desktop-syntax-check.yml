@@ -27,3 +27,4 @@ jobs:
         run: |
           python -m py_compile app-desktop/main.py
           python -m compileall -q scripts
+          python -m unittest discover -s tests -p "test_*.py" -v
