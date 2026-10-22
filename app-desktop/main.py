@@ -363,7 +363,7 @@ class NovelStudioApp:
         tools = tk.Frame(page, bg=BG); tools.pack(fill="x", padx=26, pady=(0, 8))
         self._button(tools, "NẠP FILE RAW TXT", self.load_raw_file, True)
         self._button(tools, "MỞ THƯ MỤC BẢN DỊCH", lambda: self.open_folder(TRANSLATED_DIR))
-        self._button(tools, "KẾT NỐI CHATGPT", self.start_chatgpt_login)
+        self._button(tools, "Continue with ChatGPT", self.start_chatgpt_login)
         self._button(tools, "NGẮT CHATGPT", self.start_chatgpt_logout)
         profile = tk.Frame(page, bg=BG); profile.pack(fill="x", padx=26, pady=(0, 10))
         tk.Label(profile, text="TỪ ĐIỂN BỘ TRUYỆN", bg=BG, fg=BRASS,
