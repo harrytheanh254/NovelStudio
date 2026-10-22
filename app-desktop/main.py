@@ -808,11 +808,15 @@ class NovelStudioApp:
         try:
             input_path.write_text(job["text"], encoding="utf-8")
             AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            # Long chapters can take many minutes per full-text request. Do not
+            # repeat the entire long request three times when the provider returns
+            # no audio; stop after one attempt so the diagnostic log is available.
+            attempts = "1" if len(job["text"]) >= 5000 else "3"
             proc = subprocess.run(
                 [
                     str(AUDIO_PYTHON), str(AUDIO_TTS_GENERATOR),
                     "--input", str(input_path), "--output", str(output_path),
-                    "--voice", voice_ids[job["voice"]], "--rate", job["rate"], "--attempts", "3",
+                    "--voice", voice_ids[job["voice"]], "--rate", job["rate"], "--attempts", attempts,
                 ],
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 timeout=None, cwd=str(ROOT_DIR),
