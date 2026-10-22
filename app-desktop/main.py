@@ -114,6 +114,8 @@ class NovelStudioApp:
         self.audio_outputs: list[Path] = []
         self.audio_history: list[dict] = []
         self.audio_list_paths: dict[int, Path] = {}
+        self._audio_status_after_id: str | None = None
+        self._audio_spinner_angle = 0
         self.current_page = "home"
         self._configure_styles()
         self._shell()
@@ -544,6 +546,35 @@ class NovelStudioApp:
         self._button(result_buttons, "NGHE / MỞ FILE", self.open_selected_audio_output, True)
         self._button(result_buttons, "MỞ THƯ MỤC", lambda: self.open_folder(AUDIO_DIR))
 
+        # Live status card: spinner/check icon, current state, and elapsed time.
+        self.audio_status_card = tk.Frame(
+            right, bg=PANEL2, highlightbackground=BORDER, highlightthickness=1
+        )
+        self.audio_status_card.pack(side="bottom", fill="x", padx=14, pady=(4, 3))
+        self.audio_status_icon = tk.Canvas(
+            self.audio_status_card, width=34, height=34, bg=PANEL2,
+            highlightthickness=0, bd=0
+        )
+        self.audio_status_icon.pack(side="left", padx=(10, 7), pady=7)
+        status_text = tk.Frame(self.audio_status_card, bg=PANEL2)
+        status_text.pack(side="left", fill="both", expand=True, pady=7)
+        self.audio_status_title = tk.Label(
+            status_text, text="Chưa tạo audio", bg=PANEL2, fg=MUTED,
+            font=(FONT, 10, "bold"), anchor="w"
+        )
+        self.audio_status_title.pack(fill="x")
+        self.audio_status_detail = tk.Label(
+            status_text, text="Nhấn “TẠO MỘT FILE AUDIO” để bắt đầu",
+            bg=PANEL2, fg=MUTED, font=(FONT, 8), anchor="w",
+            wraplength=230, justify="left"
+        )
+        self.audio_status_detail.pack(fill="x", pady=(2, 0))
+        self.audio_status_timer = tk.Label(
+            self.audio_status_card, text="—", bg=PANEL2, fg=INK,
+            font=(FONT, 11, "bold"), anchor="e"
+        )
+        self.audio_status_timer.pack(side="right", padx=(6, 12))
+
         self.audio_list = tk.Listbox(
             right, bg="#0E0A09", fg=INK, selectbackground="#641A23",
             relief="flat", height=10, font=(FONT, 9), activestyle="none",
@@ -552,6 +583,7 @@ class NovelStudioApp:
         self.audio_list.pack(fill="both", expand=True, padx=14, pady=(8, 4))
         self.audio_list_paths = {}
         self._render_audio_history()
+        self._render_audio_status()
 
     def _remember_audio_draft(self, _event=None):
         try:
@@ -610,6 +642,103 @@ class NovelStudioApp:
             self.audio_list.selection_set(self.audio_list.size() - 1)
             self.audio_list.see(self.audio_list.size() - 1)
 
+    @staticmethod
+    def _format_audio_elapsed(seconds: float) -> str:
+        total = max(0, int(seconds))
+        if total < 60:
+            return f"{total}s"
+        if total < 3600:
+            return f"{total // 60}m {total % 60}s"
+        return f"{total // 3600}h {(total % 3600) // 60}m {total % 60}s"
+
+    def _draw_audio_status_icon(self, state: str):
+        if not hasattr(self, "audio_status_icon"):
+            return
+        try:
+            icon = self.audio_status_icon
+            if not icon.winfo_exists():
+                return
+            icon.delete("all")
+            if state == "generating":
+                icon.create_arc(
+                    5, 5, 29, 29, start=self._audio_spinner_angle, extent=285,
+                    style="arc", outline=BRASS, width=3
+                )
+                self._audio_spinner_angle = (self._audio_spinner_angle + 28) % 360
+            elif state == "completed":
+                icon.create_line(5, 17, 12, 24, 25, 9, fill=GREEN, width=3,
+                                 capstyle="round", joinstyle="round")
+            elif state == "failed":
+                icon.create_line(8, 8, 26, 26, fill=RED_HOVER, width=3, capstyle="round")
+                icon.create_line(26, 8, 8, 26, fill=RED_HOVER, width=3, capstyle="round")
+            else:
+                icon.create_oval(9, 9, 25, 25, outline=BRASS, width=2)
+        except tk.TclError:
+            pass
+
+    def _render_audio_status(self):
+        try:
+            if self.current_page != "audio" or not self.audio_status_card.winfo_exists():
+                return
+        except (AttributeError, tk.TclError):
+            return
+
+        job = self.audio_history[-1] if self.audio_history else None
+        if job is None:
+            state = "idle"
+            title = "Chưa tạo audio"
+            detail = "Nhấn “TẠO MỘT FILE AUDIO” để bắt đầu"
+            elapsed_text = "—"
+            title_color = MUTED
+        else:
+            state = job.get("state", "idle")
+            started_at = float(job.get("started_at") or time.monotonic())
+            if state == "generating":
+                elapsed = time.monotonic() - started_at
+                title = "generate"
+                detail = f"Đang tạo: {job.get('stem') or 'audio'}"
+                title_color = BRASS
+            elif state == "completed":
+                elapsed = float(job.get("duration_seconds") or 0)
+                title = "completed"
+                detail = f"Đã tạo xong: {Path(job.get('path') or job.get('stem') or 'audio').name}"
+                title_color = GREEN
+            else:
+                elapsed = float(job.get("duration_seconds") or 0)
+                title = "failed"
+                detail = f"Tạo thất bại: {job.get('stem') or 'audio'}"
+                title_color = RED_HOVER
+            elapsed_text = self._format_audio_elapsed(elapsed)
+
+        self.audio_status_title.configure(text=title, fg=title_color)
+        self.audio_status_detail.configure(text=detail)
+        self.audio_status_timer.configure(text=elapsed_text)
+        self._draw_audio_status_icon(state)
+
+        # A single timer drives both the live clock and the spinner animation.
+        if state == "generating":
+            self._schedule_audio_status_tick()
+
+    def _schedule_audio_status_tick(self):
+        if self._audio_status_after_id is not None or self.current_page != "audio":
+            return
+        try:
+            if not self.audio_status_card.winfo_exists():
+                return
+            self._audio_status_after_id = self.root.after(120, self._audio_status_tick)
+        except (AttributeError, tk.TclError):
+            self._audio_status_after_id = None
+
+    def _audio_status_tick(self):
+        self._audio_status_after_id = None
+        self._render_audio_status()
+
+    def _finish_audio_clock(self, job: dict):
+        finished_at = time.monotonic()
+        started_at = float(job.get("started_at") or finished_at)
+        job["finished_at"] = finished_at
+        job["duration_seconds"] = max(0.0, finished_at - started_at)
+
     def start_audio_generation(self):
         if self.audio_running:
             messagebox.showinfo(
@@ -647,6 +776,9 @@ class NovelStudioApp:
             "state": "generating",
             "path": None,
             "error": None,
+            "started_at": time.monotonic(),
+            "finished_at": None,
+            "duration_seconds": None,
         }
         self.audio_history.append(job)
         self.audio_running = True
@@ -654,6 +786,7 @@ class NovelStudioApp:
         self.audio_note.configure(text="Đang gửi toàn bộ nội dung để tạo một file MP3 duy nhất...")
         self.status.set("Đang tạo một audio dài · vui lòng giữ ứng dụng mở.")
         self._render_audio_history()
+        self._render_audio_status()
         threading.Thread(target=self._audio_worker, args=(job,), daemon=True).start()
 
     @staticmethod
@@ -702,9 +835,11 @@ class NovelStudioApp:
         job["state"] = "completed"
         job["path"] = str(path)
         job["error"] = None
+        self._finish_audio_clock(job)
         self.audio_running = False
         self.audio_outputs.append(path)
         self.status.set(f"Audio hoàn tất: {path.name}")
+        self._render_audio_status()
         if self.current_page == "audio":
             try:
                 if self.audio_note.winfo_exists():
@@ -720,8 +855,10 @@ class NovelStudioApp:
             return
         job["state"] = "failed"
         job["error"] = detail
+        self._finish_audio_clock(job)
         self.audio_running = False
         self.status.set("Tạo audio thất bại.")
+        self._render_audio_status()
         if self.current_page == "audio":
             try:
                 if self.audio_note.winfo_exists():
