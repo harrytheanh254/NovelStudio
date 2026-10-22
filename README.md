@@ -8,7 +8,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
 
 - **Cào truyện:** opens the real Chrome browser; lets you choose an EPUB and calls the local `epub2txt` executable. Install WebToEpub separately in Chrome.
 - **Dịch truyện:** local Chinese-to-Vietnamese translation using HachimiMT-60 with CTranslate2 INT8 on CPU. Model weights are downloaded from Hugging Face on first use; no paid API key is required.
-- **Tạo audio dài:** dán toàn bộ nội dung vào khung bên trái hoặc nạp một TXT; chọn giọng và tốc độ. Có thể tạo ngay trên máy hoặc dùng nút **TẠO QUA GITHUB ACTIONS** để tạo MP3 trên GitHub rồi tự tải kết quả về. Mỗi tác vụ tạo một MP3; khung bên phải hiển thị tiến trình, thời gian, kết quả và lỗi.
+- **Tạo audio dài:** dán toàn bộ nội dung vào khung bên trái hoặc nạp một TXT, chọn giọng và tốc độ rồi nhấn **TẠO AUDIO**. Nút này chạy qua GitHub Actions để tạo một MP3 trên máy chủ rồi tự tải về máy. Khung bên phải hiển thị tiến trình, thời gian, kết quả và lỗi.
 - Keeps raw TXT, translated TXT, EPUB and MP3 outputs in local project folders.
 
 ## Requirements
