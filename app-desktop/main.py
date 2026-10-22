@@ -453,12 +453,12 @@ class NovelStudioApp:
         page = self._clear("audio")
         self._heading(page, "03 / Listen", "Tạo audio", "TXT tiếng Việt → các phần MP3. Cần Internet cho Edge-TTS.")
         control = self._panel(page, "NỘI DUNG VÀ THIẾT LẬP", "Nên bắt đầu với một chương. Văn bản dài sẽ được chia thành nhiều phần để giảm lỗi dịch vụ.")
-        control.pack(fill="x", padx=26, pady=(0, 12))
+        control.pack(fill="x", padx=26, pady=(0, 10))
         bar = tk.Frame(control, bg=PANEL); bar.pack(fill="x", padx=16, pady=(0, 10))
         self._button(bar, "CHỌN FILE TXT", self.select_audio_file, True)
         self.audio_file_label = tk.Label(bar, text="Chưa chọn file", bg=PANEL, fg=MUTED, font=(FONT, 9), anchor="w")
         self.audio_file_label.pack(side="left", fill="x", expand=True, padx=8)
-        opts = tk.Frame(control, bg=PANEL); opts.pack(fill="x", padx=16, pady=(0, 14))
+        opts = tk.Frame(control, bg=PANEL); opts.pack(fill="x", padx=16, pady=(0, 12))
         tk.Label(opts, text="GIỌNG", bg=PANEL, fg=BRASS, font=(FONT, 8, "bold")).pack(side="left", padx=(0, 7))
         self.voice_var = tk.StringVar(value="Nam Minh")
         ttk.Combobox(opts, textvariable=self.voice_var, values=("Nam Minh", "Hoài My"),
@@ -467,21 +467,26 @@ class NovelStudioApp:
         self.rate_var = tk.StringVar(value="1.0")
         ttk.Combobox(opts, textvariable=self.rate_var, values=("0.75", "1.0", "1.25", "1.5", "2.0"),
                      state="readonly", width=10, style="Dark.TCombobox").pack(side="left")
-        self.audio_text = tk.Text(page, height=9, bg=PANEL, fg=INK, insertbackground=INK, wrap="word",
-                                  relief="flat", font=(FONT, 10), padx=12, pady=12,
-                                  highlightbackground=BORDER, highlightthickness=1)
-        self.audio_text.pack(fill="both", expand=True, padx=26, pady=(0, 12))
-        queue_panel = self._panel(page, "HÀNG ĐỢI AUDIO", "Mỗi chương có thể tạo thành nhiều phần MP3. Chọn kết quả rồi bấm nghe thử hoặc mở thư mục.")
-        queue_panel.pack(fill="both", expand=True, padx=26, pady=(0, 10))
-        self.audio_list = tk.Listbox(queue_panel, bg="#0E0A09", fg=INK, selectbackground="#641A23",
-                                     relief="flat", height=5, font=(FONT, 9), activestyle="none")
-        self.audio_list.pack(fill="both", expand=True, padx=16, pady=(5, 10))
-        bottom = tk.Frame(queue_panel, bg=PANEL); bottom.pack(fill="x", padx=16, pady=(0, 12))
-        self.audio_note = tk.Label(bottom, text="Chưa có tác vụ.", bg=PANEL, fg=MUTED, font=(FONT, 9), anchor="w")
+
+        # Pin the actions at the bottom of the window before packing expandable widgets.
+        # This prevents the generate buttons from being pushed below the visible area.
+        bottom = tk.Frame(page, bg=BG)
+        bottom.pack(side="bottom", fill="x", padx=26, pady=10)
+        self.audio_note = tk.Label(bottom, text="Chưa có tác vụ.", bg=BG, fg=MUTED, font=(FONT, 9), anchor="w")
         self.audio_note.pack(side="left", fill="x", expand=True)
         self._button(bottom, "THÊM VÀO HÀNG ĐỢI", self.add_audio_to_queue, True)
-        self._button(bottom, "BẮT ĐẦU TẠO", self.start_audio_generation, True)
+        self._button(bottom, "BẮT ĐẦU TẠO AUDIO", self.start_audio_generation, True)
         self._button(bottom, "NGHE / MỞ KẾT QUẢ", self.open_selected_audio_output)
+
+        self.audio_text = tk.Text(page, height=5, bg=PANEL, fg=INK, insertbackground=INK, wrap="word",
+                                  relief="flat", font=(FONT, 10), padx=12, pady=12,
+                                  highlightbackground=BORDER, highlightthickness=1)
+        self.audio_text.pack(fill="x", expand=False, padx=26, pady=(0, 10))
+        queue_panel = self._panel(page, "HÀNG ĐỢI AUDIO", "Mỗi chương có thể tạo thành nhiều phần MP3. Chọn kết quả rồi bấm nghe thử hoặc mở thư mục.")
+        queue_panel.pack(fill="both", expand=True, padx=26, pady=(0, 8))
+        self.audio_list = tk.Listbox(queue_panel, bg="#0E0A09", fg=INK, selectbackground="#641A23",
+                                     relief="flat", height=4, font=(FONT, 9), activestyle="none")
+        self.audio_list.pack(fill="both", expand=True, padx=16, pady=(5, 12))
 
     def select_audio_file(self):
         path = filedialog.askopenfilename(title="Chọn TXT tiếng Việt", initialdir=str(TRANSLATED_DIR),
