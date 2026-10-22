@@ -112,6 +112,8 @@ class NovelStudioApp:
         self.audio_running = False
         self.audio_queue: list[dict] = []
         self.audio_outputs: list[Path] = []
+        self.audio_history: list[dict] = []
+        self.audio_list_paths: dict[int, Path] = {}
         self.current_page = "home"
         self._configure_styles()
         self._shell()
@@ -454,234 +456,255 @@ class NovelStudioApp:
 
     def show_audio(self):
         page = self._clear("audio")
-        self._heading(page, "03 / Listen", "Tạo audio", "Chọn nhiều chương TXT; Vietnamese-Long-Audio-TTS tạo một MP3 hoàn chỉnh cho từng chương. Cần Internet.")
-        control = self._panel(page, "NỘI DUNG VÀ THIẾT LẬP", "Nên bắt đầu với một chương. Văn bản dài sẽ được chia thành nhiều phần để giảm lỗi dịch vụ.")
-        control.pack(fill="x", padx=26, pady=(0, 10))
-        bar = tk.Frame(control, bg=PANEL); bar.pack(fill="x", padx=16, pady=(0, 10))
-        self._button(bar, "CHỌN NHIỀU CHƯƠNG TXT", self.select_audio_file, True)
-        self.audio_file_label = tk.Label(bar, text="Chưa chọn file", bg=PANEL, fg=MUTED, font=(FONT, 9), anchor="w")
+        self._heading(
+            page, "03 / Listen", "Tạo audio",
+            "Dán toàn bộ nội dung bạn muốn đọc. Mỗi lần tạo sẽ xuất đúng một file MP3 dài."
+        )
+
+        workspace = tk.Frame(page, bg=BG)
+        workspace.pack(fill="both", expand=True, padx=26, pady=(0, 18))
+        workspace.grid_rowconfigure(0, weight=1)
+        workspace.grid_columnconfigure(0, weight=3, uniform="audio_columns")
+        workspace.grid_columnconfigure(1, weight=2, uniform="audio_columns")
+
+        left = self._panel(
+            workspace, "NỘI DUNG AUDIO",
+            "Dán toàn bộ bản dịch vào đây hoặc mở một file TXT dài."
+        )
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=4)
+
+        right = self._panel(
+            workspace, "KẾT QUẢ AUDIO",
+            "Theo dõi file đang tạo, các file đã xong và những tác vụ bị lỗi."
+        )
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=4)
+
+        load_bar = tk.Frame(left, bg=PANEL)
+        load_bar.pack(fill="x", padx=14, pady=(10, 4))
+        self._button(load_bar, "MỞ FILE TXT", self.select_audio_file, True)
+        self.audio_file_label = tk.Label(
+            load_bar, text="Chưa nạp file · có thể dán văn bản trực tiếp",
+            bg=PANEL, fg=MUTED, font=(FONT, 9), anchor="w", wraplength=330, justify="left"
+        )
         self.audio_file_label.pack(side="left", fill="x", expand=True, padx=8)
-        opts = tk.Frame(control, bg=PANEL); opts.pack(fill="x", padx=16, pady=(0, 12))
-        tk.Label(opts, text="GIỌNG", bg=PANEL, fg=BRASS, font=(FONT, 8, "bold")).pack(side="left", padx=(0, 7))
-        self.voice_var = tk.StringVar(value="Nam Minh")
-        ttk.Combobox(opts, textvariable=self.voice_var, values=("Nam Minh", "Hoài My"),
-                     state="readonly", width=14, style="Dark.TCombobox").pack(side="left", padx=(0, 18))
-        tk.Label(opts, text="TỐC ĐỘ", bg=PANEL, fg=BRASS, font=(FONT, 8, "bold")).pack(side="left", padx=(0, 7))
-        self.rate_var = tk.StringVar(value="1.0")
-        ttk.Combobox(opts, textvariable=self.rate_var, values=("0.75", "1.0", "1.25", "1.5", "1.75", "2.0"),
-                     state="readonly", width=10, style="Dark.TCombobox").pack(side="left")
 
-        # Pin the actions at the bottom of the window before packing expandable widgets.
-        # This prevents the generate buttons from being pushed below the visible area.
-        bottom = tk.Frame(page, bg=BG)
-        bottom.pack(side="bottom", fill="x", padx=26, pady=10)
-        self.audio_note = tk.Label(bottom, text="Chưa có tác vụ.", bg=BG, fg=MUTED, font=(FONT, 9), anchor="w")
-        self.audio_note.pack(side="left", fill="x", expand=True)
-        self._button(bottom, "THÊM VÀO HÀNG ĐỢI", self.add_audio_to_queue, True)
-        self._button(bottom, "BẮT ĐẦU TẠO AUDIO", self.start_audio_generation, True)
-        self._button(bottom, "NGHE / MỞ KẾT QUẢ", self.open_selected_audio_output)
+        # Pack the settings and create button at the bottom so the text editor keeps
+        # all remaining space even on a smaller screen.
+        create_row = tk.Frame(left, bg=PANEL)
+        create_row.pack(side="bottom", fill="x", padx=14, pady=(4, 12))
+        self._button(create_row, "TẠO MỘT FILE AUDIO", self.start_audio_generation, True)
 
-        self.audio_text = tk.Text(page, height=5, bg=PANEL, fg=INK, insertbackground=INK, wrap="word",
-                                  relief="flat", font=(FONT, 10), padx=12, pady=12,
-                                  highlightbackground=BORDER, highlightthickness=1)
-        self.audio_text.pack(fill="x", expand=False, padx=26, pady=(0, 10))
-        queue_panel = self._panel(page, "HÀNG ĐỢI AUDIO", "Có thể chọn 15 file TXT cùng lúc; mỗi file sẽ thành một MP3 riêng. Chọn kết quả hoàn chỉnh để nghe hoặc mở file.")
-        queue_panel.pack(fill="both", expand=True, padx=26, pady=(0, 8))
-        self.audio_list = tk.Listbox(queue_panel, bg="#0E0A09", fg=INK, selectbackground="#641A23",
-                                     relief="flat", height=4, font=(FONT, 9), activestyle="none")
-        self.audio_list.pack(fill="both", expand=True, padx=16, pady=(5, 12))
-        self.audio_list_paths: dict[int, Path] = {}
+        options = tk.Frame(left, bg=PANEL)
+        options.pack(side="bottom", fill="x", padx=14, pady=(8, 2))
+        tk.Label(options, text="GIỌNG ĐỌC", bg=PANEL, fg=BRASS,
+                 font=(FONT, 8, "bold")).grid(row=0, column=0, sticky="w", padx=(0, 6), pady=4)
+        if not hasattr(self, "voice_var"):
+            self.voice_var = tk.StringVar(value="Nam Minh")
+        ttk.Combobox(
+            options, textvariable=self.voice_var, values=("Nam Minh", "Hoài My"),
+            state="readonly", width=12, style="Dark.TCombobox"
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 14), pady=4)
+        tk.Label(options, text="TỐC ĐỘ", bg=PANEL, fg=BRASS,
+                 font=(FONT, 8, "bold")).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=4)
+        if not hasattr(self, "rate_var"):
+            self.rate_var = tk.StringVar(value="1.0")
+        ttk.Combobox(
+            options, textvariable=self.rate_var,
+            values=("0.75", "1.0", "1.25", "1.5", "1.75", "2.0"),
+            state="readonly", width=7, style="Dark.TCombobox"
+        ).grid(row=0, column=3, sticky="ew", pady=4)
+        options.grid_columnconfigure(1, weight=1)
+        options.grid_columnconfigure(3, weight=1)
+
+        self.audio_text = tk.Text(
+            left, bg="#100C0B", fg=INK, insertbackground=INK, wrap="word",
+            relief="flat", font=(FONT, 10), padx=12, pady=12, undo=True,
+            highlightbackground=BORDER, highlightthickness=1
+        )
+        self.audio_text.pack(fill="both", expand=True, padx=14, pady=(6, 4))
+        self.audio_text.insert("1.0", getattr(self, "audio_draft", ""))
+
+        result_bottom = tk.Frame(right, bg=PANEL)
+        result_bottom.pack(side="bottom", fill="x", padx=14, pady=(4, 12))
+        self.audio_note = tk.Label(
+            result_bottom, text="Sẵn sàng · chưa có tác vụ mới",
+            bg=PANEL, fg=MUTED, font=(FONT, 9), anchor="w", wraplength=310, justify="left"
+        )
+        self.audio_note.pack(fill="x", pady=(0, 6))
+        result_buttons = tk.Frame(result_bottom, bg=PANEL)
+        result_buttons.pack(fill="x")
+        self._button(result_buttons, "NGHE / MỞ FILE", self.open_selected_audio_output, True)
+        self._button(result_buttons, "MỞ THƯ MỤC", lambda: self.open_folder(AUDIO_DIR))
+
+        self.audio_list = tk.Listbox(
+            right, bg="#0E0A09", fg=INK, selectbackground="#641A23",
+            relief="flat", height=10, font=(FONT, 9), activestyle="none",
+            selectmode="browse"
+        )
+        self.audio_list.pack(fill="both", expand=True, padx=14, pady=(8, 4))
+        self.audio_list_paths = {}
+        self._render_audio_history()
 
     def select_audio_file(self):
-        paths = filedialog.askopenfilenames(
-            title="Chọn một hoặc nhiều chương TXT tiếng Việt",
+        path = filedialog.askopenfilename(
+            title="Chọn một file TXT dài để tạo thành một audio",
             initialdir=str(TRANSLATED_DIR),
             filetypes=[("Text", "*.txt"), ("All files", "*.*")]
         )
-        if not paths:
+        if not path:
             return
-        self.audio_paths = [Path(p) for p in paths]
-        self.audio_path = self.audio_paths[0] if len(self.audio_paths) == 1 else None
         try:
-            preview = self.audio_paths[0].read_text(encoding="utf-8-sig")
+            content = Path(path).read_text(encoding="utf-8-sig")
         except Exception as exc:
             messagebox.showerror("Không đọc được TXT", str(exc))
             return
+        self.audio_path = Path(path)
+        self.audio_draft = content
         self.audio_text.delete("1.0", "end")
-        self.audio_text.insert("1.0", preview)
-        if len(self.audio_paths) == 1:
-            label = self.audio_paths[0].name
-            self.status.set(f"Đã nạp file audio: {label}")
-        else:
-            label = f"Đã chọn {len(self.audio_paths)} chương TXT · mỗi chương thành một MP3 riêng"
-            self.status.set(f"Đã chọn {len(self.audio_paths)} chương để tạo audio hàng loạt.")
-        self.audio_file_label.configure(text=label, fg=INK)
+        self.audio_text.insert("1.0", content)
+        self.audio_file_label.configure(text=self.audio_path.name, fg=INK)
+        self.status.set(f"Đã nạp nội dung audio: {self.audio_path.name}")
 
-    def add_audio_to_queue(self):
-        voice = self.voice_var.get()
-        rate = self.rate_var.get()
-        added = 0
-        skipped: list[str] = []
-
-        def enqueue(text: str, stem: str):
-            nonlocal added
-            if not text.strip():
-                skipped.append(f"{stem}: file trống")
-                return
-            created = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            job = {"text": text, "stem": stem, "voice": voice, "rate": rate, "created": created}
-            self.audio_queue.append(job)
-            number = len(self.audio_queue)
-            self.audio_list.insert("end", f"AU {number} · {stem} · {voice} · {rate}× · Chờ")
-            added += 1
-
-        # Multiple selected files are queued as separate chapters, not concatenated.
-        if len(self.audio_paths) > 1:
-            for path in self.audio_paths:
-                try:
-                    enqueue(path.read_text(encoding="utf-8-sig"), path.stem)
-                except Exception as exc:
-                    skipped.append(f"{path.name}: {exc}")
-        else:
-            text = self.audio_text.get("1.0", "end-1c").strip()
-            if not text:
-                messagebox.showwarning("Chưa có nội dung", "Hãy chọn file TXT hoặc dán văn bản trước.")
-                return
-            stem = self.audio_path.stem if self.audio_path else "noi_dung"
-            enqueue(text, stem)
-
-        if added:
-            self.audio_note.configure(text=f"Đã thêm {added} chương/tác vụ vào hàng đợi.")
-            self.status.set(f"Đã thêm {added} tác vụ audio.")
-            # Consume the current selection so pressing Start again cannot silently
-            # queue the same batch a second time after it has completed.
-            self.audio_paths = []
-            self.audio_path = None
-            self.audio_text.delete("1.0", "end")
-            self.audio_file_label.configure(text=f"Đã thêm {added} chương vào hàng đợi", fg=INK)
-        if skipped:
-            messagebox.showwarning("Một số file bị bỏ qua", "\n".join(skipped[:8]))
-        if not added and skipped:
-            self.audio_note.configure(text="Không có file hợp lệ để tạo audio.")
-
-    @staticmethod
-    def _split_audio_text(text: str, limit: int = 1800) -> list[str]:
-        """Split text conservatively, preserving all non-whitespace content."""
-        import re
-        normalized = text.strip()
-        if not normalized:
-            return []
-        pieces = re.split(r"(?<=[。！？!?；;.!?])\s+|\n+", normalized)
-        chunks: list[str] = []
-        current = ""
-        for piece in pieces:
-            piece = piece.strip()
-            if not piece:
-                continue
-            while len(piece) > limit:
-                cut = piece.rfind(" ", 0, limit + 1)
-                if cut < max(1, limit // 2):
-                    cut = limit
-                prefix, piece = piece[:cut].strip(), piece[cut:].strip()
-                if prefix:
-                    if current:
-                        chunks.append(current)
-                        current = ""
-                    chunks.append(prefix)
-            if current and len(current) + 1 + len(piece) > limit:
-                chunks.append(current)
-                current = piece
+    def _render_audio_history(self):
+        if not hasattr(self, "audio_list"):
+            return
+        self.audio_list.delete(0, "end")
+        self.audio_list_paths = {}
+        for job in self.audio_history:
+            state = job.get("state", "waiting")
+            if state == "generating":
+                label = f"⏳ ĐANG TẠO · {job['stem']}"
+            elif state == "completed":
+                path = job.get("path")
+                label = f"✓ ĐÃ XONG · {Path(path).name if path else job['stem']}"
             else:
-                current = (current + " " + piece).strip()
-        if current:
-            chunks.append(current)
-        # Fallback when regex has normalized separators and would lose line breaks only.
-        return chunks
+                detail = str(job.get("error") or "")
+                label = f"✗ LỖI · {job['stem']}" + (f" · {detail[:70]}" if detail else "")
+            self.audio_list.insert("end", label)
+            index = self.audio_list.size() - 1
+            if state == "completed" and job.get("path"):
+                self.audio_list_paths[index] = Path(job["path"])
+        if self.audio_history:
+            self.audio_list.selection_clear(0, "end")
+            self.audio_list.selection_set(self.audio_list.size() - 1)
+            self.audio_list.see(self.audio_list.size() - 1)
 
     def start_audio_generation(self):
         if self.audio_running:
+            messagebox.showinfo(
+                "Đang tạo audio",
+                "Một audio đang được tạo. Hãy chờ hoàn tất rồi tạo lượt tiếp theo để tránh gửi nhiều yêu cầu cùng lúc."
+            )
             return
-        if not self.audio_queue:
-            self.add_audio_to_queue()
-            if not self.audio_queue:
-                return
+
+        text = self.audio_text.get("1.0", "end-1c").strip()
+        if not text:
+            messagebox.showwarning("Chưa có nội dung", "Hãy dán toàn bộ nội dung hoặc mở một file TXT trước.")
+            return
         if not AUDIO_PYTHON.is_file():
-            messagebox.showerror("Chưa cài bộ audio", f"Không tìm thấy môi trường audio:\n{AUDIO_PYTHON}\n\nChạy scripts\\setup_audio.ps1 trước.")
+            messagebox.showerror(
+                "Chưa cài bộ audio",
+                f"Không tìm thấy môi trường audio:\\n{AUDIO_PYTHON}\\n\\nChạy scripts\\setup_audio.ps1 trước."
+            )
             return
         if not AUDIO_TTS_GENERATOR.is_file():
             messagebox.showerror(
                 "Chưa cập nhật bộ tạo audio dài",
-                f"Không tìm thấy bộ tạo audio của Vietnamese-Long-Audio-TTS:\n{AUDIO_TTS_GENERATOR}\n\n"
-                "Hãy chạy scripts\\update_long_audio_tts.ps1 trước."
+                f"Không tìm thấy bộ tạo audio dài:\\n{AUDIO_TTS_GENERATOR}\\n\\n"
+                "Chạy scripts\\update_long_audio_tts.ps1 trước."
             )
             return
-        pending = list(self.audio_queue)
-        self.audio_queue.clear()
+
+        stem = self.audio_path.stem if self.audio_path else "audio_dai"
+        job_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        job = {
+            "id": job_id,
+            "text": text,
+            "stem": stem,
+            "voice": self.voice_var.get(),
+            "rate": self.rate_var.get(),
+            "state": "generating",
+            "path": None,
+            "error": None,
+        }
+        self.audio_history.append(job)
         self.audio_running = True
-        self.audio_note.configure(text=f"Đang tạo {len(pending)} file MP3 hoàn chỉnh...")
-        threading.Thread(target=self._audio_worker, args=(pending,), daemon=True).start()
+        self.audio_draft = text
+        self.audio_note.configure(text="Đang gửi toàn bộ nội dung để tạo một file MP3 duy nhất...")
+        self.status.set("Đang tạo một audio dài · vui lòng giữ ứng dụng mở.")
+        self._render_audio_history()
+        threading.Thread(target=self._audio_worker, args=(job,), daemon=True).start()
 
     @staticmethod
     def _safe_audio_stem(stem: str) -> str:
-        import re
-        return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", stem).strip(" .") or "audio"
+        # Remove Windows-invalid filename characters while preserving Vietnamese.
+        invalid = set('<>:"/\\\\|?*')
+        clean = "".join("_" if char in invalid or ord(char) < 32 else char for char in stem)
+        return clean.strip(" .") or "audio"
 
-    def _append_audio_result(self, path: Path):
-        self.audio_list.insert("end", f"✓ MP3 hoàn chỉnh · {path.name}")
-        self.audio_list_paths[self.audio_list.size() - 1] = path
-
-    def _audio_worker(self, pending: list[dict]):
-        failed: list[str] = []
+    def _audio_worker(self, job: dict):
+        job_id = job["id"]
+        input_path = TEMP_DIR / f"long_tts_input_{job_id}.txt"
+        safe_stem = self._safe_audio_stem(job["stem"])
+        output_path = AUDIO_DIR / f"{safe_stem}_{job_id}.mp3"
         voice_ids = {
             "Nam Minh": "vi-VN-NamMinhNeural",
             "Hoài My": "vi-VN-HoaiMyNeural",
         }
-        for job_no, job in enumerate(pending, 1):
-            safe_stem = self._safe_audio_stem(job["stem"])
-            # One TXT chapter creates one completed MP3 in the audio folder.
-            final_path = AUDIO_DIR / f"{safe_stem}_{job['created']}_{job_no:02d}.mp3"
-            input_path = TEMP_DIR / f"long_tts_input_{job['created']}_{job_no:02d}.txt"
+        try:
             input_path.write_text(job["text"], encoding="utf-8")
-            self.root.after(0, lambda j=job_no, n=len(pending): self.audio_note.configure(
-                text=f"Đang tạo MP3 hoàn chỉnh · chương {j}/{n}"))
-            try:
-                proc = subprocess.run(
-                    [str(AUDIO_PYTHON), str(AUDIO_TTS_GENERATOR),
-                     "--input", str(input_path), "--output", str(final_path),
-                     "--voice", voice_ids[job["voice"]], "--rate", job["rate"], "--attempts", "3"],
-                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=None,
-                    cwd=str(ROOT_DIR),
-                )
-                if proc.returncode != 0:
-                    raise RuntimeError((proc.stderr or proc.stdout or "Vietnamese-Long-Audio-TTS trả về lỗi.").strip())
-                if not final_path.is_file() or final_path.stat().st_size < 128:
-                    raise RuntimeError("File MP3 đầu ra rỗng hoặc không hợp lệ.")
-                self.audio_outputs.append(final_path)
-                self.root.after(0, lambda path=final_path: self._append_audio_result(path))
-            except Exception as exc:
-                failed.append(f"{job['stem']}: {exc}")
-                self.root.after(0, lambda stem=job["stem"], d=str(exc): self.audio_list.insert(
-                    "end", f"✗ {stem}: {d[:160]}"))
-            finally:
-                input_path.unlink(missing_ok=True)
-        self.root.after(0, lambda: self._audio_generation_finished(failed))
+            AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+            proc = subprocess.run(
+                [
+                    str(AUDIO_PYTHON), str(AUDIO_TTS_GENERATOR),
+                    "--input", str(input_path), "--output", str(output_path),
+                    "--voice", voice_ids[job["voice"]], "--rate", job["rate"], "--attempts", "3",
+                ],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=None, cwd=str(ROOT_DIR),
+            )
+            if proc.returncode != 0:
+                raise RuntimeError((proc.stderr or proc.stdout or "Bộ tạo audio dài trả về lỗi.").strip())
+            if not output_path.is_file() or output_path.stat().st_size < 128:
+                raise RuntimeError("File MP3 đầu ra rỗng hoặc không hợp lệ.")
+            self.root.after(0, lambda j=job_id, p=output_path: self._complete_audio_job(j, p))
+        except Exception as exc:
+            detail = str(exc).strip() or type(exc).__name__
+            self.root.after(0, lambda j=job_id, d=detail: self._fail_audio_job(j, d))
+        finally:
+            input_path.unlink(missing_ok=True)
 
-    def _audio_generation_finished(self, failed: list[str]):
+    def _complete_audio_job(self, job_id: str, path: Path):
+        job = next((item for item in self.audio_history if item["id"] == job_id), None)
+        if job is None:
+            return
+        job["state"] = "completed"
+        job["path"] = str(path)
+        job["error"] = None
         self.audio_running = False
-        if failed:
-            self.audio_note.configure(text=f"Chưa hoàn tất · {len(failed)} chương audio bị lỗi")
-            self.status.set("Audio hoàn thành một phần; xem chi tiết trong hàng đợi.")
-            messagebox.showwarning("Một số chương audio thất bại", "\n\n".join(failed[:4]))
-        else:
-            self.audio_note.configure(text="Hoàn thành · Có thể chọn file MP3 để nghe.")
-            self.status.set("Tạo audio hoàn tất.")
-            messagebox.showinfo("Audio hoàn tất", "Đã tạo xong một file MP3 hoàn chỉnh cho mỗi chương thành công. Chọn file rồi bấm NGHE / MỞ KẾT QUẢ.")
+        self.audio_outputs.append(path)
+        self.audio_note.configure(text=f"Đã tạo xong một file audio duy nhất: {path.name}")
+        self.status.set(f"Audio hoàn tất: {path.name}")
+        self._render_audio_history()
+        messagebox.showinfo("Tạo audio thành công", f"Đã tạo một file MP3 hoàn chỉnh:\\n{path}")
+
+    def _fail_audio_job(self, job_id: str, detail: str):
+        job = next((item for item in self.audio_history if item["id"] == job_id), None)
+        if job is None:
+            return
+        job["state"] = "failed"
+        job["error"] = detail
+        self.audio_running = False
+        self.audio_note.configure(text="Tạo audio thất bại · xem chi tiết ở khung kết quả.")
+        self.status.set("Tạo audio thất bại.")
+        self._render_audio_history()
+        messagebox.showerror("Không tạo được audio", detail[:3000])
 
     def open_selected_audio_output(self):
         try:
             index = self.audio_list.curselection()[0]
         except Exception:
-            messagebox.showinfo("Chọn kết quả", "Hãy chọn một dòng MP3 hoàn chỉnh trong hàng đợi trước.")
+            messagebox.showinfo("Chọn kết quả", "Hãy chọn một file audio đã tạo xong ở khung bên phải.")
             return
         path = self.audio_list_paths.get(index)
         if path and path.is_file():
@@ -690,9 +713,10 @@ class NovelStudioApp:
             except Exception:
                 webbrowser.open(path.as_uri())
         else:
-            messagebox.showinfo("Chưa phải file hoàn chỉnh",
-                                "Chọn dòng có dấu ✓ MP3 hoàn chỉnh để nghe hoặc mở file.")
-            self.open_folder(AUDIO_DIR)
+            messagebox.showinfo(
+                "Audio chưa sẵn sàng",
+                "Dòng đang chọn chưa có MP3 hoàn chỉnh. Hãy chọn dòng bắt đầu bằng “✓ ĐÃ XONG”."
+            )
 
     def open_folder(self, folder: Path):
         folder.mkdir(parents=True, exist_ok=True)
