@@ -641,13 +641,13 @@ class NovelStudioApp:
     def _audio_generation_finished(self, failed: list[str]):
         self.audio_running = False
         if failed:
-            self.audio_note.configure(text=f"Hoàn thành có lỗi · {len(failed)} phần thất bại")
+            self.audio_note.configure(text=f"Chưa hoàn tất · {len(failed)} phần audio/ghép bị lỗi")
             self.status.set("Audio hoàn thành một phần; xem chi tiết trong hàng đợi.")
             messagebox.showwarning("Một số phần audio thất bại", "\n\n".join(failed[:4]))
         else:
             self.audio_note.configure(text="Hoàn thành · Có thể chọn file MP3 để nghe.")
             self.status.set("Tạo audio hoàn tất.")
-            messagebox.showinfo("Audio hoàn tất", "Đã tạo xong các phần MP3. Chọn một kết quả rồi bấm nghe/mở.")
+            messagebox.showinfo("Audio hoàn tất", "Đã ghép xong một file MP3 hoàn chỉnh cho mỗi tác vụ. Chọn dòng MP3 hoàn chỉnh rồi bấm NGHE / MỞ KẾT QUẢ.")
 
     def open_selected_audio_output(self):
         try:
