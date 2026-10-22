@@ -35,6 +35,12 @@ TRANSLATED_DIR = DATA_DIR / "translated"
 AUDIO_DIR = DATA_DIR / "audio"
 TEMP_DIR = ROOT_DIR / "temp"
 MODEL_CACHE_DIR = ROOT_DIR / "models" / "huggingface"
+GLOSSARY_DIR = ROOT_DIR / "config"
+GLOSSARY_PROFILES = {
+    "Lâm Thánh": GLOSSARY_DIR / "glossary_lam_thanh.json",
+    "Vớt Thi Nhân": GLOSSARY_DIR / "glossary_vot_thi_nhan.json",
+    "Từ điển chung": GLOSSARY_DIR / "glossary_zh_vi.json",
+}
 EPUB2TXT_EXE = ROOT_DIR / "envs" / "epub2txt" / "Scripts" / "epub2txt.exe"
 TRANSLATION_PYTHON = ROOT_DIR / "envs" / "translation" / "Scripts" / "python.exe"
 AUDIO_PYTHON = ROOT_DIR / "envs" / "audio-tts" / "Scripts" / "python.exe"
@@ -335,9 +341,18 @@ class NovelStudioApp:
     def show_translate(self):
         page = self._clear("translate")
         self._heading(page, "02 / Translate", "Dịch truyện", "Chọn TXT tiếng Trung; mô hình HachimiMT-60 chạy CPU INT8 cục bộ.")
-        tools = tk.Frame(page, bg=BG); tools.pack(fill="x", padx=26, pady=(0, 12))
+        tools = tk.Frame(page, bg=BG); tools.pack(fill="x", padx=26, pady=(0, 8))
         self._button(tools, "NẠP FILE RAW TXT", self.load_raw_file, True)
         self._button(tools, "MỞ THƯ MỤC BẢN DỊCH", lambda: self.open_folder(TRANSLATED_DIR))
+        profile = tk.Frame(page, bg=BG); profile.pack(fill="x", padx=26, pady=(0, 10))
+        tk.Label(profile, text="TỪ ĐIỂN BỘ TRUYỆN", bg=BG, fg=BRASS,
+                 font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
+        self.glossary_profile_var = tk.StringVar(value="Lâm Thánh")
+        ttk.Combobox(profile, textvariable=self.glossary_profile_var,
+                     values=("Lâm Thánh", "Vớt Thi Nhân", "Từ điển chung"),
+                     state="readonly", width=18, style="Dark.TCombobox").pack(side="left")
+        tk.Label(profile, text="Chọn đúng truyện để giữ tên riêng và thuật ngữ nhất quán.",
+                 bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
         panes = tk.Frame(page, bg=BG); panes.pack(fill="both", expand=True, padx=26, pady=4)
         for col in range(2):
             panes.grid_columnconfigure(col, weight=1, uniform="translation")
@@ -391,19 +406,25 @@ class NovelStudioApp:
             messagebox.showwarning("Chưa có raw", "Hãy nạp hoặc dán nội dung vào khung Raw."); return
         if not TRANSLATION_PYTHON.is_file():
             messagebox.showerror("Chưa cài bộ dịch", f"Không tìm thấy môi trường dịch:\n{TRANSLATION_PYTHON}\n\nChạy scripts\\setup_translation.ps1 trước."); return
+        profile_name = self.glossary_profile_var.get()
+        glossary_path = GLOSSARY_PROFILES[profile_name]
+        if not glossary_path.is_file():
+            messagebox.showerror("Thiếu từ điển", f"Không tìm thấy từ điển cho {profile_name}:\\n{glossary_path}")
+            return
         source = TEMP_DIR / "translation_input.txt"
         source.write_text(raw, encoding="utf-8")
         output = TRANSLATED_DIR / ((self.raw_path.stem if self.raw_path else "ban_dich") + "_vi.txt")
         self.translation_running = True
-        self.translate_note.configure(text="Đang dịch... lần đầu cần tải mô hình về máy.")
-        self.status.set("Đang dịch bằng HachimiMT-60 CPU INT8...")
-        threading.Thread(target=self._translation_worker, args=(source, output), daemon=True).start()
+        self.translate_note.configure(text=f"Đang dịch bằng từ điển: {profile_name}. Lần đầu cần tải mô hình về máy.")
+        self.status.set(f"Đang dịch bằng HachimiMT-60 CPU INT8 · {profile_name}...")
+        threading.Thread(target=self._translation_worker, args=(source, output, glossary_path), daemon=True).start()
 
-    def _translation_worker(self, source: Path, output: Path):
+    def _translation_worker(self, source: Path, output: Path, glossary_path: Path):
         try:
             proc = subprocess.run(
                 [str(TRANSLATION_PYTHON), str(TRANSLATION_SCRIPT), "--input", str(source),
-                 "--output", str(output), "--cache-dir", str(MODEL_CACHE_DIR)],
+                 "--output", str(output), "--cache-dir", str(MODEL_CACHE_DIR),
+                 "--glossary", str(glossary_path)],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=None,
                 cwd=str(ROOT_DIR),
             )
