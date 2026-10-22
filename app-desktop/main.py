@@ -117,6 +117,41 @@ def split_text_for_clipboard_translation(text: str, max_chars: int = 2800) -> li
     return result
 
 
+CHAPTER_HEADING_RE = re.compile(
+    r"(?im)^[ \t\u3000]*("
+    r"第\s*[0-9０-９零〇一二三四五六七八九十百千万两兩廿卅]+\s*(?:章|回|节|節|卷|集|部|篇)(?:[ \t\u3000:：.．、\-—].*)?"
+    r"|(?:Chapter|Chương)\s+[0-9０-９零〇一二三四五六七八九十百千万]+(?:[ \t\u3000:：.．、\-—].*)?"
+    r")[ \t\u3000]*$"
+)
+
+
+def split_novel_into_batches(text: str, chapters_per_batch: int = 3) -> tuple[int, list[str]]:
+    """Group a chaptered novel into exact batches while preserving every source character."""
+    if chapters_per_batch < 1:
+        raise ValueError("chapters_per_batch phải lớn hơn 0.")
+    if not text.strip():
+        return 0, []
+    matches = list(CHAPTER_HEADING_RE.finditer(text))
+    if not matches:
+        raise ValueError(
+            "Không nhận ra tiêu đề chương trong file TXT. Hãy giữ tiêu đề dạng '第1章', '第十二章', "
+            "'Chapter 1' hoặc 'Chương 1' để SẢNH TRUYỆN gom chính xác 3 chương mỗi lượt."
+        )
+    # The first block starts at byte/character zero so any preface is retained with chapter 1.
+    starts = [0] + [match.start() for match in matches[1:]]
+    chapters: list[str] = []
+    for idx, start in enumerate(starts):
+        end = starts[idx + 1] if idx + 1 < len(starts) else len(text)
+        chapters.append(text[start:end])
+    if "".join(chapters) != text:
+        raise AssertionError("Lỗi nội bộ: tách chương làm thay đổi văn bản nguồn.")
+    batches = [
+        "".join(chapters[idx:idx + chapters_per_batch])
+        for idx in range(0, len(chapters), chapters_per_batch)
+    ]
+    return len(chapters), batches
+
+
 def build_clipboard_translation_prompt(
     source_chunk: str,
     glossary: dict[str, str],
@@ -562,80 +597,93 @@ class NovelStudioApp:
                 for key, value in glossary_data.items()
                 if isinstance(key, str) and isinstance(value, str) and key.strip() and value.strip()
             }
-            chunk_pairs = split_text_for_clipboard_translation(source_text)
+            chapter_count, batches = split_novel_into_batches(source_text, chapters_per_batch=3)
         except Exception as exc:
             self.translation_running = False
             messagebox.showerror("Không thể chuẩn bị dịch", str(exc))
             return
-        if not chunk_pairs:
+        if not batches:
             self.translation_running = False
             messagebox.showwarning("Không có nội dung", "Văn bản nguồn đang trống.")
             return
+
+        existing = self.vi_box.get("1.0", "end-1c")
+        if existing.strip():
+            if not messagebox.askyesno(
+                "Thay bản dịch hiện tại?",
+                "Khung bản dịch hiện không trống. Bạn có muốn xóa nội dung này để bắt đầu một đợt dịch mới?"
+            ):
+                self.translation_running = False
+                return
+            self.vi_box.delete("1.0", "end")
 
         session = {
             "source": source_text,
             "output": output,
             "glossary": glossary,
             "profile_name": profile_name,
-            "chunks": chunk_pairs,
+            "chapter_count": chapter_count,
+            "chapters_per_batch": 3,
+            "chunks": batches,
             "translations": [],
             "index": 0,
+            "expected_prefix": "",
             "window": None,
             "prompt_box": None,
-            "answer_box": None,
             "progress_label": None,
         }
         self.clipboard_translation_session = session
         self._open_chatgpt_clipboard_window(session)
+        self._manual_copy_prompt()
+        self._set_chatgpt_progress(
+            f"Đã chuẩn bị {chapter_count} chương thành {len(batches)} lượt. Prompt lượt 1 đã sao chép; hãy gửi trong ChatGPT."
+        )
 
     def _open_chatgpt_clipboard_window(self, session: dict):
         window = tk.Toplevel(self.root)
         window.title("SẢNH TRUYỆN · Dịch văn học qua ChatGPT")
-        window.geometry("1020x760")
-        window.minsize(800, 600)
+        window.geometry("980x650")
+        window.minsize(760, 520)
         window.configure(bg=BG)
+        # Keep this window non-modal so the user can paste ChatGPT's answer into
+        # the main translation pane while this progress window remains available.
         window.transient(self.root)
-        window.grab_set()
         session["window"] = window
 
         tk.Label(
-            window, text="CẦU NỐI CHATGPT · THAO TÁC CÓ XÁC NHẬN",
+            window, text="DỊCH CHATGPT · MỖI LƯỢT 3 CHƯƠNG",
             bg=BG, fg=BRASS, font=(FONT, 13, "bold"), anchor="w"
         ).pack(fill="x", padx=18, pady=(16, 4))
         tk.Label(
             window,
-            text="SẢNH TRUYỆN không tự đọc câu trả lời trên trang ChatGPT. Bạn gửi prompt, sao chép câu trả lời và dán vào ô bên dưới.",
-            bg=BG, fg=MUTED, font=(FONT, 9), anchor="w", justify="left", wraplength=950
+            text=(
+                "1) Bấm MỞ CHATGPT + SAO CHÉP PROMPT và gửi prompt trong ChatGPT. "
+                "2) Khi ChatGPT trả lời xong, sao chép phần dịch. "
+                "3) Quay lại cửa sổ SẢNH TRUYỆN chính, dán vào CUỐI khung BẢN DỊCH TIẾNG VIỆT bên phải. "
+                "4) Quay về cửa sổ này và bấm ĐÃ DÁN KẾT QUẢ. Không xóa hay sửa phần dịch của các lượt trước."
+            ),
+            bg=BG, fg=MUTED, font=(FONT, 9), anchor="w", justify="left", wraplength=920
         ).pack(fill="x", padx=18, pady=(0, 10))
 
         progress = tk.Label(window, text="", bg=BG, fg=INK, font=(FONT, 10, "bold"), anchor="w")
         progress.pack(fill="x", padx=18, pady=(0, 6))
         session["progress_label"] = progress
 
-        tk.Label(window, text="PROMPT ĐÃ CHUẨN BỊ", bg=BG, fg=BRASS,
+        tk.Label(window, text="PROMPT CỦA LƯỢT HIỆN TẠI", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold"), anchor="w").pack(fill="x", padx=18)
         prompt_box = tk.Text(
-            window, height=9, bg=PANEL, fg=INK, insertbackground=INK, wrap="word",
+            window, height=16, bg=PANEL, fg=INK, insertbackground=INK, wrap="word",
             relief="flat", font=(FONT, 9), padx=10, pady=10, undo=False
         )
-        prompt_box.pack(fill="both", expand=True, padx=18, pady=(4, 8))
+        prompt_box.pack(fill="both", expand=True, padx=18, pady=(4, 10))
         prompt_box.configure(state="disabled")
         session["prompt_box"] = prompt_box
-
-        tk.Label(window, text="DÁN CÂU TRẢ LỜI CHATGPT VÀO ĐÂY", bg=BG, fg=BRASS,
-                 font=(FONT, 9, "bold"), anchor="w").pack(fill="x", padx=18)
-        answer_box = tk.Text(
-            window, height=9, bg="#100C0B", fg=INK, insertbackground=INK, wrap="word",
-            relief="flat", font=(FONT, 10), padx=10, pady=10, undo=True
-        )
-        answer_box.pack(fill="both", expand=True, padx=18, pady=(4, 10))
-        session["answer_box"] = answer_box
 
         controls = tk.Frame(window, bg=BG)
         controls.pack(fill="x", padx=18, pady=(0, 16))
         self._button(controls, "MỞ CHATGPT + SAO CHÉP PROMPT", self._manual_copy_prompt_and_open, True)
         self._button(controls, "SAO CHÉP LẠI PROMPT", self._manual_copy_prompt)
-        self._button(controls, "LƯU ĐOẠN & TIẾP TỤC", self._manual_accept_answer, True)
+        self._button(controls, "ĐÃ DÁN KẾT QUẢ · TIẾP TỤC", self._manual_accept_answer, True)
         self._button(controls, "HỦY PHIÊN DỊCH", self._manual_cancel_session)
 
         window.protocol("WM_DELETE_WINDOW", self._manual_close_window)
@@ -645,7 +693,7 @@ class NovelStudioApp:
         session = getattr(self, "clipboard_translation_session", None)
         if session and messagebox.askyesno(
             "Đóng cửa sổ dịch?",
-            "Đóng cửa sổ sẽ dừng phiên clipboard hiện tại và không lưu chương chưa hoàn tất. Đóng cửa sổ?"
+            "Đóng cửa sổ sẽ hủy phiên clipboard hiện tại nhưng giữ nguyên những gì đang có trong khung bản dịch. Đóng cửa sổ?"
         ):
             self._manual_cancel_session()
         elif session:
@@ -654,25 +702,30 @@ class NovelStudioApp:
     def _manual_show_current_chunk(self, session: dict):
         index = session["index"]
         total = len(session["chunks"])
-        chunk, _separator = session["chunks"][index]
-        previous = session["translations"][-1] if session["translations"] else ""
-        prompt = build_clipboard_translation_prompt(chunk, session["glossary"], previous)
+        source_chunk = session["chunks"][index]
+        first_chapter = index * session["chapters_per_batch"] + 1
+        last_chapter = min(
+            (index + 1) * session["chapters_per_batch"],
+            session["chapter_count"]
+        )
+        previous = "\n\n".join(session["translations"][-2:])
+        prompt = build_clipboard_translation_prompt(source_chunk, session["glossary"], previous)
         session["current_prompt"] = prompt
+        session["expected_prefix"] = self.vi_box.get("1.0", "end-1c")
         progress = session.get("progress_label")
         prompt_box = session.get("prompt_box")
-        answer_box = session.get("answer_box")
         if progress is not None and progress.winfo_exists():
             progress.configure(
-                text=f"ĐOẠN {index + 1}/{total} · {len(chunk):,} ký tự · Bộ truyện: {session['profile_name']}"
+                text=(
+                    f"LƯỢT {index + 1}/{total} · CHƯƠNG {first_chapter}–{last_chapter} "
+                    f"TRÊN {session['chapter_count']} · {len(source_chunk):,} ký tự"
+                )
             )
         if prompt_box is not None and prompt_box.winfo_exists():
             prompt_box.configure(state="normal")
             prompt_box.delete("1.0", "end")
             prompt_box.insert("1.0", prompt)
             prompt_box.configure(state="disabled")
-        if answer_box is not None and answer_box.winfo_exists():
-            answer_box.delete("1.0", "end")
-            answer_box.focus_set()
 
     def _manual_copy_prompt(self):
         session = getattr(self, "clipboard_translation_session", None)
@@ -683,7 +736,7 @@ class NovelStudioApp:
             self.root.clipboard_append(session["current_prompt"])
             self.root.update()
             self._set_chatgpt_progress(
-                f"Đã sao chép prompt đoạn {session['index'] + 1}/{len(session['chunks'])}. Dán vào ChatGPT."
+                f"Đã sao chép prompt lượt {session['index'] + 1}/{len(session['chunks'])}. Dán và gửi trong ChatGPT."
             )
         except tk.TclError as exc:
             messagebox.showerror("Không sao chép được", f"Clipboard không khả dụng: {exc}")
@@ -699,55 +752,72 @@ class NovelStudioApp:
         session = getattr(self, "clipboard_translation_session", None)
         if not session:
             return
-        answer_box = session.get("answer_box")
-        if answer_box is None or not answer_box.winfo_exists():
-            return
-        answer = answer_box.get("1.0", "end-1c").strip("\r\n")
-        if not answer.strip():
+        current_text = self.vi_box.get("1.0", "end-1c")
+        expected_prefix = session.get("expected_prefix", "")
+        if not current_text.startswith(expected_prefix):
             messagebox.showwarning(
-                "Chưa có bản dịch",
-                "Hãy sao chép câu trả lời từ ChatGPT rồi tự dán vào ô kết quả trước khi tiếp tục."
+                "Bản dịch cũ đã bị thay đổi",
+                "SẢNH TRUYỆN phát hiện phần văn bản đã chấp nhận trước đó bị sửa hoặc xóa. "
+                "Hãy khôi phục phần trước, đặt con trỏ ở cuối khung BẢN DỊCH TIẾNG VIỆT rồi dán câu trả lời mới."
             )
             return
+        new_answer = current_text[len(expected_prefix):].strip("\r\n")
+        if not new_answer.strip():
+            messagebox.showwarning(
+                "Chưa dán kết quả",
+                "Hãy sao chép câu trả lời trong ChatGPT, dán vào CUỐI khung BẢN DỊCH TIẾNG VIỆT bên phải, rồi bấm nút này."
+            )
+            return
+        index = session["index"]
+        total = len(session["chunks"])
         if not messagebox.askyesno(
-            "Chấp nhận đoạn dịch?",
-            f"Lưu kết quả bạn đã dán cho đoạn {session['index'] + 1}/{len(session['chunks'])} và chuyển tiếp?"
+            "Xác nhận bản dịch",
+            f"Bạn đã dán kết quả cho lượt {index + 1}/{total} vào khung bản dịch chưa?\\n\\n"
+            "Sau khi xác nhận, SẢNH TRUYỆN sẽ giữ nguyên đoạn này và chuẩn bị prompt lượt tiếp theo."
         ):
             return
-        session["translations"].append(answer)
+
+        # Normalize the join between batches in the main translation textbox.
+        prefix = expected_prefix.rstrip("\r\n")
+        assembled = (prefix + "\n\n" if prefix else "") + new_answer
+        self.vi_box.delete("1.0", "end")
+        self.vi_box.insert("1.0", assembled)
+        self.vi_box.mark_set("insert", "end-1c")
+        self.vi_box.see("end")
+        session["translations"].append(new_answer)
         session["index"] += 1
-        if session["index"] >= len(session["chunks"]):
-            try:
-                assembled: list[str] = []
-                for idx, translated_part in enumerate(session["translations"]):
-                    assembled.append(translated_part.strip("\r\n"))
-                    if idx < len(session["chunks"]) - 1:
-                        assembled.append(session["chunks"][idx][1] or " ")
-                translated = "".join(assembled).strip("\r\n")
-                output = session["output"]
-                output.parent.mkdir(parents=True, exist_ok=True)
-                partial = output.with_suffix(output.suffix + ".partial")
-                partial.write_text(translated, encoding="utf-8")
-                partial.replace(output)
-                self.vi_box.delete("1.0", "end")
-                self.vi_box.insert("1.0", translated)
-                self.translate_note.configure(text=f"Hoàn tất qua clipboard: {output.name}")
-                self.status.set(f"Đã dịch xong: {output.name}")
-                self.translation_running = False
-                window = session.get("window")
-                self.clipboard_translation_session = None
-                if window is not None and window.winfo_exists():
-                    window.destroy()
-                messagebox.showinfo("Dịch hoàn tất", f"Đã lưu bản dịch tại:\n{output}")
-            except Exception as exc:
-                self.translation_running = False
-                messagebox.showerror("Không lưu được bản dịch", str(exc))
+
+        if session["index"] >= total:
+            window = session.get("window")
+            self.clipboard_translation_session = None
+            self.translation_running = False
+            self.translate_note.configure(
+                text=f"Đã gom đủ {session['chapter_count']} chương trong {total} lượt · hãy bấm LƯU BẢN DỊCH."
+            )
+            self.status.set("Đã dịch xong qua ChatGPT clipboard. Hãy bấm LƯU BẢN DỊCH để lưu TXT.")
+            if window is not None and window.winfo_exists():
+                window.destroy()
+            messagebox.showinfo(
+                "Đã hoàn tất 5 lượt dịch" if total == 5 else "Đã hoàn tất đợt dịch",
+                f"Đã gom đủ {session['chapter_count']} chương trong {total} lượt.\\n\\n"
+                "Bản dịch đang nằm trong khung BẢN DỊCH TIẾNG VIỆT. "
+                "Hãy kiểm tra rồi bấm LƯU BẢN DỊCH để lưu TXT về máy."
+            )
             return
 
         self._manual_show_current_chunk(session)
         self._manual_copy_prompt()
-        self._set_chatgpt_progress(
-            f"Đã nhận đoạn trước. Prompt tiếp theo đã sao chép ({session['index'] + 1}/{len(session['chunks'])})."
+        next_first = session["index"] * session["chapters_per_batch"] + 1
+        next_last = min(
+            (session["index"] + 1) * session["chapters_per_batch"],
+            session["chapter_count"]
+        )
+        messagebox.showinfo(
+            "Đã nhận kết quả · chuẩn bị lượt tiếp theo",
+            f"Đã nhận lượt {index + 1}/{total}. Prompt lượt {session['index'] + 1}/{total} "
+            f"(chương {next_first}–{next_last}) đã được sao chép.\\n\\n"
+            "Quay lại ChatGPT, dán và gửi prompt mới. Khi ChatGPT trả lời xong, sao chép bản dịch, "
+            "dán vào CUỐI khung BẢN DỊCH TIẾNG VIỆT bên phải rồi quay lại bấm ĐÃ DÁN KẾT QUẢ."
         )
 
     def _manual_cancel_session(self):
@@ -756,7 +826,9 @@ class NovelStudioApp:
             window = session.get("window")
             self.clipboard_translation_session = None
             self.translation_running = False
-            self.translate_note.configure(text="Đã hủy phiên dịch qua clipboard; chưa lưu chương hoàn chỉnh.")
+            self.translate_note.configure(
+                text="Đã hủy phiên dịch qua clipboard; nội dung đã dán vẫn được giữ trong khung bản dịch."
+            )
             self.status.set("Đã hủy phiên dịch qua clipboard.")
             if window is not None and window.winfo_exists():
                 window.destroy()
