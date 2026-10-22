@@ -553,6 +553,12 @@ class NovelStudioApp:
         if added:
             self.audio_note.configure(text=f"Đã thêm {added} chương/tác vụ vào hàng đợi.")
             self.status.set(f"Đã thêm {added} tác vụ audio.")
+            # Consume the current selection so pressing Start again cannot silently
+            # queue the same batch a second time after it has completed.
+            self.audio_paths = []
+            self.audio_path = None
+            self.audio_text.delete("1.0", "end")
+            self.audio_file_label.configure(text=f"Đã thêm {added} chương vào hàng đợi", fg=INK)
         if skipped:
             messagebox.showwarning("Một số file bị bỏ qua", "\n".join(skipped[:8]))
         if not added and skipped:
