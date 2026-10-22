@@ -5,6 +5,14 @@ import re
 import sys
 from pathlib import Path
 
+# Windows consoles may use a legacy code page that cannot print Vietnamese text.
+# Force UTF-8 for status messages and warnings; replace any unencodable third-party output.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
 MODEL_ID = "ngocdang83/HachimiMT-60-zh-vi"
 DEFAULT_MAX_CHARS = 850
 
