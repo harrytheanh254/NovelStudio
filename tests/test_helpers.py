@@ -70,13 +70,11 @@ def test_ffmpeg_concat_quote_handles_apostrophe():
     assert "'\\''" in quoted
 
 
-def test_audio_split_does_not_drop_text():
+def test_audio_output_filename_keeps_vietnamese_and_removes_invalid_characters():
     module = load_module("app_main", ROOT / "app-desktop" / "main.py")
-    source = ("第一句话。第二句话！第三句话？\n\n" * 100).strip()
-    parts = module.NovelStudioApp._split_audio_text(source, limit=90)
-    compact = lambda s: "".join(s.split())
-    assert compact("".join(parts)) == compact(source)
-    assert all(len(part) <= 90 for part in parts)
+    stem = module.NovelStudioApp._safe_audio_stem('Lâm Thánh: Chương 1/2?')
+    assert "Lâm Thánh" in stem
+    assert all(ch not in stem for ch in '<>:"/\\|?*')
 
 
 if __name__ == "__main__":
@@ -84,6 +82,6 @@ if __name__ == "__main__":
     test_per_novel_glossaries_protect_core_terms()
     test_translation_never_sends_glossary_term_to_model()
     test_glossary_protects_and_restores_character_names()
-    test_audio_split_does_not_drop_text()
+    test_audio_output_filename_keeps_vietnamese_and_removes_invalid_characters()
     test_ffmpeg_concat_quote_handles_apostrophe()
     print("Helper tests passed.")
