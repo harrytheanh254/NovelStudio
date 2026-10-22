@@ -18,10 +18,14 @@ $env:TMP = Join-Path $Root "temp"
 New-Item -ItemType Directory -Force $env:TEMP | Out-Null
 
 Write-Host "Dang cap nhat thu vien audio..."
-& $VenvPython -m pip install -r (Join-Path $Repo "requirements.txt")
+& $VenvPython -m pip install --upgrade -r (Join-Path $Repo "requirements.txt")
 if ($LASTEXITCODE -ne 0) {
     throw "Cap nhat thu vien Vietnamese-Long-Audio-TTS that bai."
 }
 
+& $VenvPython -c "import importlib.metadata as m; print('Edge-TTS da cai:', m.version('edge-tts'))"
+if ($LASTEXITCODE -ne 0) {
+    throw "Khong kiem tra duoc phien ban Edge-TTS."
+}
 Write-Host "Da san sang: app se tao mot MP3 cho moi file TXT, khong can tu chia/tu ghep." -ForegroundColor Green
 Read-Host "Nhan Enter de dong"
