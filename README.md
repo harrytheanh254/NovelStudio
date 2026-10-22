@@ -69,11 +69,12 @@ If your Python 3.12 path differs, edit the `$Python` variable in the setup scrip
 
 ## Optional ChatGPT literary translation (experimental)
 
-The translation screen includes an experimental **ChatGPT · Dịch văn học** mode based on OpenAI's official Sign in with ChatGPT flow for eligible open-source apps. It keeps HachimiMT-60 as the default local mode. ChatGPT mode uses the account's authorized Responses API access; it does not read or access the user's ChatGPT conversations.
+The translation screen keeps HachimiMT-60 as the default local mode and offers two experimental ChatGPT paths: **ChatGPT · Dịch văn học** uses the official Sign in with ChatGPT flow for eligible open-source apps; **ChatGPT · Qua clipboard** prepares prompts and opens ChatGPT but requires the user to paste each prompt and manually paste each answer back into SẢNH TRUYỆN. The clipboard mode does not scrape or programmatically read ChatGPT's page/output.
 
 - Run **scripts\\setup_translation.ps1** again after updating the project so the translation environment installs the JWT validation dependency.
 - In **Dịch truyện**, choose **KẾT NỐI CHATGPT** and finish the OpenAI login/consent flow in the system browser. Windows DPAPI encrypts the local credential record for the signed-in Windows user. Use **NGẮT CHATGPT** to revoke the session and remove the local credential record.
 - Select **ChatGPT · Dịch văn học** and press **BẮT ĐẦU DỊCH**. The app asks the account model catalog for an available model, translates the chapter in bounded chunks, passes the selected novel glossary, and saves the resulting TXT only after all chunks succeed.
+- Or select **ChatGPT · Qua clipboard**. The app copies a prepared literary-translation prompt and opens ChatGPT. Manually paste/send the prompt in ChatGPT, copy the completed answer, then paste that answer into the SẢNH TRUYỆN workflow and accept it. SẢNH TRUYỆN never reads the ChatGPT webpage or extracts its answer automatically.
 - This plan-usage path is documented for eligible ChatGPT Plus/Pro accounts and workspaces; a successful identity sign-in alone does not guarantee permission to use the plan. Free accounts may not be eligible. The app reports permission and usage-limit errors and does not silently switch billing modes.
 - ChatGPT mode sends each source chunk and matching glossary entries to OpenAI for translation. Requests set store=false and stream=true as required by this flow, but the text is still sent to an external service. Keep local mode selected for texts that must remain on the computer.
 - The feature is experimental and must be tested with an account that has the required scope before relying on it for a full novel. Never commit credentials, raw novels, translations, or logs.
