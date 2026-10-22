@@ -1006,14 +1006,22 @@ class NovelStudioApp:
                 if response.returncode == 0:
                     try:
                         candidates = json.loads(response.stdout).get("workflow_runs", [])
+                        new_candidates = [
+                            item for item in candidates
+                            if int(item.get("id", 0)) not in before_ids
+                            and item.get("event") == "workflow_dispatch"
+                        ]
                         remote_run = next(
                             (
-                                item for item in candidates
-                                if int(item.get("id", 0)) not in before_ids
-                                and item.get("display_title") == expected_title
+                                item for item in new_candidates
+                                if item.get("display_title") == expected_title
                             ),
                             None,
                         )
+                        # Some GitHub API views may show the workflow name rather than
+                        # the custom run-name. If exactly one new run exists, use it.
+                        if remote_run is None and len(new_candidates) == 1:
+                            remote_run = new_candidates[0]
                     except (json.JSONDecodeError, TypeError, ValueError):
                         remote_run = None
                 if remote_run:
