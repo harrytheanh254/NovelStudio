@@ -1,0 +1,24 @@
+# Local environment and downloaded models
+vendor/
+envs/
+models/
+cache/
+temp/
+__pycache__/
+*.py[cod]
+
+# Private content and outputs
+data/
+*.epub
+*.mp3
+*.wav
+*.m4a
+*_raw.txt
+*_vi.txt
+
+# Runtime files and credentials
+.env
+.env.*
+*.log
+*.partial
+*_secrets*
