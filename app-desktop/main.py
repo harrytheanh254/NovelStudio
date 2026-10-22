@@ -523,6 +523,8 @@ class NovelStudioApp:
         )
         self.audio_text.pack(fill="both", expand=True, padx=14, pady=(6, 4))
         self.audio_text.insert("1.0", getattr(self, "audio_draft", ""))
+        self.audio_text.edit_modified(False)
+        self.audio_text.bind("<<Modified>>", self._remember_audio_draft)
 
         result_bottom = tk.Frame(right, bg=PANEL)
         result_bottom.pack(side="bottom", fill="x", padx=14, pady=(4, 12))
@@ -544,6 +546,14 @@ class NovelStudioApp:
         self.audio_list.pack(fill="both", expand=True, padx=14, pady=(8, 4))
         self.audio_list_paths = {}
         self._render_audio_history()
+
+    def _remember_audio_draft(self, _event=None):
+        try:
+            if self.audio_text.edit_modified():
+                self.audio_draft = self.audio_text.get("1.0", "end-1c")
+                self.audio_text.edit_modified(False)
+        except tk.TclError:
+            pass
 
     def select_audio_file(self):
         path = filedialog.askopenfilename(
