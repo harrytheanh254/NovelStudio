@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import base64
+import gzip
+import json
 import os
 import shutil
 import subprocess
 import threading
+import uuid
 import time
 import webbrowser
 from datetime import datetime
@@ -48,6 +52,13 @@ TRANSLATION_SCRIPT = ROOT_DIR / "scripts" / "translate_hachimi.py"
 AUDIO_WORKER_SCRIPT = ROOT_DIR / "scripts" / "audio_worker.py"
 AUDIO_TTS_GENERATOR = ROOT_DIR / "vendor" / "Vietnamese-Long-Audio-TTS" / "generate_audio.py"
 MERGE_AUDIO_SCRIPT = ROOT_DIR / "scripts" / "merge_audio.py"
+GITHUB_AUDIO_REPO = os.environ.get(
+    "NOVELSTUDIO_GITHUB_AUDIO_REPO",
+    "harrytheanh254/Vietnamese-Long-Audio-TTS",
+).strip()
+GITHUB_AUDIO_REF = os.environ.get("NOVELSTUDIO_GITHUB_AUDIO_REF", "main").strip() or "main"
+GITHUB_AUDIO_WORKFLOW = "generate_audio.yml"
+GITHUB_AUDIO_MAX_ENCODED_CHARS = 58000
 
 for folder in (EPUB_DIR, RAW_DIR, TRANSLATED_DIR, AUDIO_DIR, TEMP_DIR):
     folder.mkdir(parents=True, exist_ok=True)
@@ -500,7 +511,14 @@ class NovelStudioApp:
         # all remaining space even on a smaller screen.
         create_row = tk.Frame(left, bg=PANEL)
         create_row.pack(side="bottom", fill="x", padx=14, pady=(4, 12))
-        self._button(create_row, "TẠO MỘT FILE AUDIO", self.start_audio_generation, True)
+        self._button(
+            create_row, "TẠO TRÊN MÁY", self.start_audio_generation,
+            False, width=150
+        )
+        self._button(
+            create_row, "TẠO QUA GITHUB ACTIONS", self.start_audio_generation_github,
+            True, width=205
+        )
 
         options = tk.Frame(left, bg=PANEL)
         options.pack(side="bottom", fill="x", padx=14, pady=(8, 2))
@@ -626,7 +644,8 @@ class NovelStudioApp:
         for job in self.audio_history:
             state = job.get("state", "waiting")
             if state == "generating":
-                label = f"⏳ ĐANG TẠO · {job['stem']}"
+                engine_label = "GITHUB ACTIONS" if job.get("engine") == "github" else "MÁY"
+                label = f"⏳ GENERATE · {engine_label} · {job['stem']}"
             elif state == "completed":
                 path = job.get("path")
                 label = f"✓ ĐÃ XONG · {Path(path).name if path else job['stem']}"
@@ -696,7 +715,7 @@ class NovelStudioApp:
             if state == "generating":
                 elapsed = time.monotonic() - started_at
                 title = "generate"
-                detail = f"Đang tạo: {job.get('stem') or 'audio'}"
+                detail = str(job.get("progress") or f"Đang tạo: {job.get('stem') or 'audio'}")
                 title_color = BRASS
             elif state == "completed":
                 elapsed = float(job.get("duration_seconds") or 0)
@@ -774,6 +793,7 @@ class NovelStudioApp:
             "voice": self.voice_var.get(),
             "rate": self.rate_var.get(),
             "state": "generating",
+            "engine": "local",
             "path": None,
             "error": None,
             "started_at": time.monotonic(),
