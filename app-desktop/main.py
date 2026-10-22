@@ -434,7 +434,7 @@ class NovelStudioApp:
             translation_env["PYTHONIOENCODING"] = "utf-8:replace"
             translation_env.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
             proc = subprocess.run(
-                [str(TRANSLATION_PYTHON), str(TRANSLATION_SCRIPT), "--input", str(source),
+                [str(TRANSLATION_PYTHON), "-X", "utf8", str(TRANSLATION_SCRIPT), "--input", str(source),
                  "--output", str(output), "--cache-dir", str(MODEL_CACHE_DIR),
                  "--glossary", str(glossary_path)],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=None,
