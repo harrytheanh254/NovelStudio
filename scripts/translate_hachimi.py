@@ -157,6 +157,79 @@ def translate_piece(text: str, tokenizer, engine) -> str:
     return tokenizer.decode(token_ids, skip_special_tokens=True).strip()
 
 
+def translate_glossary_line(body: str, glossary: dict[str, str], translate_fragment) -> str:
+    """Translate around exact glossary hits; glossary terms themselves never enter the model."""
+    terms = sorted(glossary.keys(), key=len, reverse=True)
+    if not terms:
+        return translate_fragment(body)
+    pattern = re.compile("(" + "|".join(re.escape(term) for term in terms) + ")")
+    pieces = pattern.split(body)
+    if len(pieces) == 1:
+        return translate_fragment(body)
+
+    output = ""
+    opening_punctuation = set("（([{「『“‘《〈【〔〖〘〚")
+    closing_punctuation = set("，。！？；：,.!?;:、…）)]}”’」』》〉】〕〗〙〛")
+    for piece in pieces:
+        if not piece:
+            continue
+        if piece in glossary:
+            translated_piece = glossary[piece]
+        elif not piece.strip():
+            continue
+        elif all(char.isspace() or __import__("unicodedata").category(char).startswith("P")
+                 for char in piece):
+            translated_piece = piece.strip()
+        else:
+            translated_piece = translate_fragment(piece).strip()
+        if not translated_piece:
+            continue
+        if not output:
+            output = translated_piece
+            continue
+
+        left = output.rstrip()
+        right = translated_piece.lstrip()
+        if not left or not right:
+            output = left + right
+        elif right[0] in closing_punctuation:
+            output = left + right
+        elif left[-1] in opening_punctuation:
+            output = left + right
+        else:
+            # Vietnamese needs a word boundary around restored names, unlike Chinese source text.
+            output = left + " " + right
+    return output
+
+
+def translate_text_with_glossary(source: str, tokenizer, engine, glossary: dict[str, str], progress=None) -> str:
+    """Translate text while preserving exact character/term spellings from the selected glossary."""
+    lines = source.splitlines(keepends=True)
+    if not lines and source:
+        lines = [source]
+    nonblank_count = sum(1 for line in lines if restore_line_ending(line)[0].strip())
+    completed = 0
+    output: list[str] = []
+
+    def translate_fragment(fragment: str) -> str:
+        return translate_text(fragment, tokenizer, engine).strip()
+
+    for line in lines:
+        body, ending = restore_line_ending(line)
+        if not body.strip():
+            output.append(line)
+            continue
+        if any(term in body for term in glossary):
+            translated = translate_glossary_line(body, glossary, translate_fragment)
+        else:
+            translated = translate_fragment(body)
+        output.append(translated + ending)
+        completed += 1
+        if progress:
+            progress(completed, max(nonblank_count, 1))
+    return "".join(output)
+
+
 def translate_text(source: str, tokenizer, engine, progress=None) -> str:
     lines = source.splitlines(keepends=True)
     if not lines and source:
@@ -198,16 +271,15 @@ def main() -> int:
         if not source.strip():
             raise ValueError("File TXT đang trống.")
         glossary = load_glossary(Path(args.glossary).expanduser().resolve())
-        protected_source, marker_to_target = protect_glossary(source, glossary)
-        print(f"[STATUS] Đã khóa {len(marker_to_target)} mục từ điển để giữ nguyên tên/thuật ngữ.", flush=True)
+        matched_terms = sum(1 for term in glossary if term in source)
+        print(f"[STATUS] Từ điển đã nạp: {len(glossary)} mục; khớp trong văn bản này: {matched_terms} mục.", flush=True)
         tokenizer, engine = load_engine(cache_dir)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         partial_path = output_path.with_suffix(output_path.suffix + ".partial")
         total = max(sum(1 for line in source.splitlines() if line.strip()), 1)
         def on_progress(done: int, _total: int) -> None:
             print(f"[PROGRESS] {done}/{total}", flush=True)
-        translated = translate_text(protected_source, tokenizer, engine, progress=on_progress)
-        translated = restore_glossary(translated, marker_to_target)
+        translated = translate_text_with_glossary(source, tokenizer, engine, glossary, progress=on_progress)
         partial_path.write_text(translated, encoding="utf-8")
         partial_path.replace(output_path)
         print(f"[SUCCESS] Đã lưu bản dịch: {output_path}", flush=True)
