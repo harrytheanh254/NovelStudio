@@ -409,7 +409,7 @@ class NovelStudioApp:
         profile_name = self.glossary_profile_var.get()
         glossary_path = GLOSSARY_PROFILES[profile_name]
         if not glossary_path.is_file():
-            messagebox.showerror("Thiếu từ điển", f"Không tìm thấy từ điển cho {profile_name}:\\n{glossary_path}")
+            messagebox.showerror("Thiếu từ điển", f"Không tìm thấy từ điển cho {profile_name}:\n{glossary_path}")
             return
         source = TEMP_DIR / "translation_input.txt"
         source.write_text(raw, encoding="utf-8")
