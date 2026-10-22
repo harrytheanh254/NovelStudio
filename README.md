@@ -1,30 +1,75 @@
-# SẢNH TRUYỆN — NovelStudio
+# SẢNH TRUYỆN — NovelStudio (prototype v0.3)
 
-A lightweight Windows desktop prototype for managing a novel workflow: web capture, Chinese-to-Vietnamese translation, and Vietnamese audio generation.
+A lightweight Windows desktop prototype for managing a novel workflow: web capture, Chinese-to-Vietnamese translation, and Vietnamese audio generation. The UI uses Python's built-in Tkinter and a dark steampunk palette for low-memory PCs.
 
-## Status
+**Status:** early development prototype, not a finished release. The code has been syntax-checked, but the integrated workflow still needs testing on the target Windows machine.
 
-This repository is an early development version, not a finished release. The UI is built with Python/Tkinter to remain suitable for low-memory PCs.
+## Features
 
-### Features planned / in development
-
-- Open the real Chrome browser for WebToEpub capture.
-- Convert EPUB files to TXT with `epub2txt`.
-- Translate Chinese TXT to Vietnamese locally using a compact CPU model (separate setup required).
-- Generate Vietnamese speech with Edge-TTS (internet connection required).
-- Save intermediate TXT and MP3 files locally.
+- **Cào truyện:** opens the real Chrome browser; lets you choose an EPUB and calls the local `epub2txt` executable. Install WebToEpub separately in Chrome.
+- **Dịch truyện:** local Chinese-to-Vietnamese translation using HachimiMT-60 with CTranslate2 INT8 on CPU. Model weights are downloaded from Hugging Face on first use; no paid API key is required.
+- **Tạo audio:** Edge-TTS with Nam Minh or Hoài My. Long text is split into multiple MP3 parts. Parts remain separate; automatic merging is not included.
+- Keeps raw TXT, translated TXT, EPUB and MP3 outputs in local project folders.
 
 ## Requirements
 
 - Windows 10/11
-- Python 3.12 recommended
-- Google Chrome for WebToEpub
-- Internet access for package installation and Edge-TTS
+- Python 3.12 recommended (scripts default to `D:\Python312\python.exe`)
+- Git for Windows
+- Google Chrome
+- Internet for installing dependencies, downloading the translation model, and Edge-TTS synthesis
 
-## Important
+## Quick setup
 
-- The application is still being integrated and needs local testing.
-- Do not commit books, personal TXT files, generated MP3s, credentials, API keys, virtual environments, or model weights.
-- Check `THIRD_PARTY_NOTICES.md` before redistributing the app or its dependencies.
+1. Download this repository ZIP and extract it to `D:\NovelStudio`.
+2. Clone the third-party tools under `D:\NovelStudio\vendor` (skip any that you already have):
 
-See `REPO_UPLOAD_GUIDE.md` for the next upload/setup steps once those files are present.
+   ```powershell
+   cd D:\NovelStudio\vendor
+   git clone https://github.com/dteviot/WebToEpub.git
+   git clone https://github.com/ffreemt/epub2txt.git
+   git clone https://github.com/Tanphong254/Vietnamese-Long-Audio-TTS.git
+   ```
+
+3. Make sure `D:\NovelStudio\envs\epub2txt\Scripts\epub2txt.exe` exists and works.
+4. Open PowerShell and run the audio setup script if needed:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\setup_audio.ps1
+   ```
+
+5. Set up the local translation dependencies:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\setup_translation.ps1
+   ```
+
+6. Start the app by double-clicking `scripts\run_desktop.bat`, or run:
+
+   ```powershell
+   & "D:\Python312\python.exe" "D:\NovelStudio\app-desktop\main.py"
+   ```
+
+If your Python 3.12 path differs, edit the `$Python` variable in the setup scripts and the `PYTHON` variable in `run_desktop.bat`.
+
+## Translation model
+
+- Model: [HachimiMT-60 Chinese → Vietnamese](https://huggingface.co/ngocdang83/HachimiMT-60-zh-vi)
+- Uses the CTranslate2 `ct2-int8_float32` model on CPU.
+- The first translation downloads model files to `D:\NovelStudio\models\huggingface`.
+- Machine translation can mistranslate names, pronouns, and specialist terminology. Review output before publishing.
+- Model card declares CC BY 4.0; see `THIRD_PARTY_NOTICES.md`.
+
+## Known limitations
+
+- Edge-TTS needs an internet connection and can fail due to connection issues or service-side limits.
+- Long audio is saved as multiple MP3 parts, not merged into one file.
+- Translation currently has no custom glossary or chapter-context memory.
+- No Windows installer is included yet.
+- The UI and backends still need end-to-end testing on the target PC.
+
+## Repository hygiene
+
+Do not commit novels, raw or translated TXT files, audio, downloaded model weights, virtual environments, caches, logs, credentials, or API tokens. These are excluded by `.gitignore`.
+
+Repository: https://github.com/harrytheanh254/NovelStudio
