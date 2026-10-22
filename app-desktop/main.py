@@ -568,6 +568,11 @@ class NovelStudioApp:
     def _render_audio_history(self):
         if not hasattr(self, "audio_list"):
             return
+        try:
+            if not self.audio_list.winfo_exists():
+                return
+        except tk.TclError:
+            return
         self.audio_list.delete(0, "end")
         self.audio_list_paths = {}
         for job in self.audio_history:
@@ -604,13 +609,13 @@ class NovelStudioApp:
         if not AUDIO_PYTHON.is_file():
             messagebox.showerror(
                 "Chưa cài bộ audio",
-                f"Không tìm thấy môi trường audio:\\n{AUDIO_PYTHON}\\n\\nChạy scripts\\setup_audio.ps1 trước."
+                f"Không tìm thấy môi trường audio:\n{AUDIO_PYTHON}\n\nChạy scripts\\setup_audio.ps1 trước."
             )
             return
         if not AUDIO_TTS_GENERATOR.is_file():
             messagebox.showerror(
                 "Chưa cập nhật bộ tạo audio dài",
-                f"Không tìm thấy bộ tạo audio dài:\\n{AUDIO_TTS_GENERATOR}\\n\\n"
+                f"Không tìm thấy bộ tạo audio dài:\n{AUDIO_TTS_GENERATOR}\n\n"
                 "Chạy scripts\\update_long_audio_tts.ps1 trước."
             )
             return
@@ -683,10 +688,15 @@ class NovelStudioApp:
         job["error"] = None
         self.audio_running = False
         self.audio_outputs.append(path)
-        self.audio_note.configure(text=f"Đã tạo xong một file audio duy nhất: {path.name}")
         self.status.set(f"Audio hoàn tất: {path.name}")
-        self._render_audio_history()
-        messagebox.showinfo("Tạo audio thành công", f"Đã tạo một file MP3 hoàn chỉnh:\\n{path}")
+        if self.current_page == "audio":
+            try:
+                if self.audio_note.winfo_exists():
+                    self.audio_note.configure(text=f"Đã tạo xong một file audio duy nhất: {path.name}")
+                    self._render_audio_history()
+                    messagebox.showinfo("Tạo audio thành công", f"Đã tạo một file MP3 hoàn chỉnh:\n{path}")
+            except tk.TclError:
+                pass
 
     def _fail_audio_job(self, job_id: str, detail: str):
         job = next((item for item in self.audio_history if item["id"] == job_id), None)
@@ -695,10 +705,15 @@ class NovelStudioApp:
         job["state"] = "failed"
         job["error"] = detail
         self.audio_running = False
-        self.audio_note.configure(text="Tạo audio thất bại · xem chi tiết ở khung kết quả.")
         self.status.set("Tạo audio thất bại.")
-        self._render_audio_history()
-        messagebox.showerror("Không tạo được audio", detail[:3000])
+        if self.current_page == "audio":
+            try:
+                if self.audio_note.winfo_exists():
+                    self.audio_note.configure(text="Tạo audio thất bại · xem chi tiết ở khung kết quả.")
+                    self._render_audio_history()
+                    messagebox.showerror("Không tạo được audio", detail[:3000])
+            except tk.TclError:
+                pass
 
     def open_selected_audio_output(self):
         try:
