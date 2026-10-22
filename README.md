@@ -8,7 +8,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
 
 - **Cào truyện:** opens the real Chrome browser; lets you choose an EPUB and calls the local `epub2txt` executable. Install WebToEpub separately in Chrome.
 - **Dịch truyện:** local Chinese-to-Vietnamese translation using HachimiMT-60 with CTranslate2 INT8 on CPU. Model weights are downloaded from Hugging Face on first use; no paid API key is required.
-- **Tạo audio hàng loạt:** chọn nhiều file TXT chương cùng lúc; app queues each selected chapter and calls `vendor/Vietnamese-Long-Audio-TTS/generate_audio.py` to create one final MP3 per chapter. Each chapter uses one full-script generator run—there is no manual split/merge workflow in SẢNH TRUYỆN.
+- **Tạo audio dài:** dán toàn bộ nội dung vào khung bên trái hoặc nạp một TXT; chọn giọng và tốc độ rồi bấm tạo. Mỗi lần bấm tạo sẽ gửi toàn bộ văn bản qua `vendor/Vietnamese-Long-Audio-TTS/generate_audio.py` và xuất đúng một MP3. Khung bên phải hiển thị tác vụ đang tạo, đã hoàn tất và lỗi.
 - Keeps raw TXT, translated TXT, EPUB and MP3 outputs in local project folders.
 
 ## Requirements
