@@ -347,7 +347,8 @@ class NovelStudioApp:
         profile = tk.Frame(page, bg=BG); profile.pack(fill="x", padx=26, pady=(0, 10))
         tk.Label(profile, text="TỪ ĐIỂN BỘ TRUYỆN", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
-        self.glossary_profile_var = tk.StringVar(value="Lâm Thánh")
+        if not hasattr(self, "glossary_profile_var"):
+            self.glossary_profile_var = tk.StringVar(value="Lâm Thánh")
         ttk.Combobox(profile, textvariable=self.glossary_profile_var,
                      values=("Lâm Thánh", "Vớt Thi Nhân", "Từ điển chung"),
                      state="readonly", width=18, style="Dark.TCombobox").pack(side="left")
