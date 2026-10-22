@@ -680,11 +680,13 @@ class NovelStudioApp:
         except Exception as exc:
             messagebox.showerror("Không đọc được TXT", str(exc)); return
         self.raw_path = Path(path)
-        if hasattr(self, "story_title_var") and not self.story_title_var.get().strip():
+        if hasattr(self, "story_title_var"):
             title = self.raw_path.stem
             for suffix in ("_raw", "_RAW", "_raw_txt", "_RAW_TXT"):
                 if title.endswith(suffix):
                     title = title[:-len(suffix)]
+            # Refresh the suggested title whenever another source file is loaded.
+            # The user can then edit this field if the filename is not the actual novel title.
             self.story_title_var.set(title)
         self.raw_box.delete("1.0", "end"); self.raw_box.insert("1.0", text)
         self.vi_box.delete("1.0", "end")
