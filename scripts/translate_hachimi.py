@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -15,10 +16,58 @@ for _stream in (sys.stdout, sys.stderr):
 
 MODEL_ID = "ngocdang83/HachimiMT-60-zh-vi"
 DEFAULT_MAX_CHARS = 850
+ROOT_DIR = Path(__file__).resolve().parent.parent
+DEFAULT_GLOSSARY_PATH = ROOT_DIR / "config" / "glossary_zh_vi.json"
 
 
 def read_utf8(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig")
+
+
+def load_glossary(path: Path) -> dict[str, str]:
+    """Load exact Chinese-to-Vietnamese terms. Missing glossary files mean no substitutions."""
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Không đọc được từ điển {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError("Từ điển phải là JSON dạng { \"từ tiếng Trung\": \"cách viết tiếng Việt\" }.")
+    glossary: dict[str, str] = {}
+    for source, target in data.items():
+        if not isinstance(source, str) or not isinstance(target, str):
+            continue
+        source, target = source.strip(), target.strip()
+        if source and target:
+            glossary[source] = target
+    return glossary
+
+
+def protect_glossary(source: str, glossary: dict[str, str]) -> tuple[str, dict[str, str]]:
+    """Replace exact glossary terms with stable ASCII markers before machine translation."""
+    protected = source
+    marker_to_target: dict[str, str] = {}
+    # Replace longer names first so a short alias cannot consume part of a full name.
+    terms = sorted(glossary.items(), key=lambda item: len(item[0]), reverse=True)
+    next_id = 1
+    for source_term, target_term in terms:
+        if source_term not in protected:
+            continue
+        marker = f"ZXQTERM{next_id:05d}QXZ"
+        next_id += 1
+        protected = protected.replace(source_term, marker)
+        marker_to_target[marker] = target_term
+    return protected, marker_to_target
+
+
+def restore_glossary(translated: str, marker_to_target: dict[str, str]) -> str:
+    """Restore glossary terms, allowing whitespace if the tokenizer split a marker."""
+    result = translated
+    for marker, target in marker_to_target.items():
+        pattern = r"\\s*".join(re.escape(char) for char in marker)
+        result = re.sub(pattern, lambda _match, value=target: value, result, flags=re.IGNORECASE)
+    return result
 
 
 def split_long_paragraph(text: str, max_chars: int = DEFAULT_MAX_CHARS) -> list[str]:
@@ -135,6 +184,7 @@ def main() -> int:
     parser.add_argument("--input", required=True, help="TXT đầu vào, mã hóa UTF-8")
     parser.add_argument("--output", required=True, help="TXT bản dịch đầu ra")
     parser.add_argument("--cache-dir", required=True, help="Thư mục cache mô hình trên ổ D")
+    parser.add_argument("--glossary", default=str(DEFAULT_GLOSSARY_PATH), help="Từ điển thuật ngữ Trung -> Việt dạng JSON")
     args = parser.parse_args()
 
     source_path = Path(args.input).expanduser().resolve()
@@ -147,13 +197,17 @@ def main() -> int:
         source = read_utf8(source_path)
         if not source.strip():
             raise ValueError("File TXT đang trống.")
+        glossary = load_glossary(Path(args.glossary).expanduser().resolve())
+        protected_source, marker_to_target = protect_glossary(source, glossary)
+        print(f"[STATUS] Đã khóa {len(marker_to_target)} mục từ điển để giữ nguyên tên/thuật ngữ.", flush=True)
         tokenizer, engine = load_engine(cache_dir)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         partial_path = output_path.with_suffix(output_path.suffix + ".partial")
         total = max(sum(1 for line in source.splitlines() if line.strip()), 1)
         def on_progress(done: int, _total: int) -> None:
             print(f"[PROGRESS] {done}/{total}", flush=True)
-        translated = translate_text(source, tokenizer, engine, progress=on_progress)
+        translated = translate_text(protected_source, tokenizer, engine, progress=on_progress)
+        translated = restore_glossary(translated, marker_to_target)
         partial_path.write_text(translated, encoding="utf-8")
         partial_path.replace(output_path)
         print(f"[SUCCESS] Đã lưu bản dịch: {output_path}", flush=True)
