@@ -28,7 +28,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
    cd D:\NovelStudio\vendor
    git clone https://github.com/dteviot/WebToEpub.git
    git clone https://github.com/ffreemt/epub2txt.git
-   git clone https://github.com/Tanphong254/Vietnamese-Long-Audio-TTS.git
+   git clone https://github.com/harrytheanh254/Vietnamese-Long-Audio-TTS.git
    ```
 
 3. Make sure `D:\NovelStudio\envs\epub2txt\Scripts\epub2txt.exe` exists and works.
@@ -38,13 +38,19 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
    powershell -ExecutionPolicy Bypass -File .\scripts\setup_audio.ps1
    ```
 
-5. Set up the local translation dependencies:
+5. Update the local long-audio generator from your fork. This downloads the `generate_audio.py` and matching dependencies; it does not upload novel text to GitHub:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\update_long_audio_tts.ps1
+   ```
+
+6. Set up the local translation dependencies:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\scripts\setup_translation.ps1
    ```
 
-6. Start the app by double-clicking `scripts\run_desktop.bat`, or run:
+7. Start the app by double-clicking `scripts\run_desktop.bat`, or run:
 
    ```powershell
    & "D:\Python312\python.exe" "D:\NovelStudio\app-desktop\main.py"
