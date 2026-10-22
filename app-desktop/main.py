@@ -595,6 +595,7 @@ class NovelStudioApp:
         window.minsize(800, 600)
         window.configure(bg=BG)
         window.transient(self.root)
+        window.grab_set()
         session["window"] = window
 
         tk.Label(
