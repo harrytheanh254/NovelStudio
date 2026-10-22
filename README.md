@@ -22,7 +22,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
 ## Quick setup
 
 1. Download this repository ZIP and extract it to `D:\NovelStudio`.
-2. Clone the third-party tools under `D:\NovelStudio\vendor` (skip any that you already have):
+2. Clone the third-party tools under `D:\\NovelStudio\\vendor` (skip any that you already have). The long-audio repository is private, so sign in first using `gh auth login` and configure Git with `gh auth setup-git`:
 
    ```powershell
    cd D:\NovelStudio\vendor
