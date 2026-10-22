@@ -575,7 +575,7 @@ class NovelStudioApp:
 
         failed: list[str] = []
         for job_no, job in enumerate(pending, 1):
-            safe_stem = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', "_", job["stem"]).strip(" .") or "audio"
+            safe_stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", job["stem"]).strip(" .") or "audio"
             folder = AUDIO_DIR / f"{safe_stem}_{job['created']}_{job_no:02d}"
             folder.mkdir(parents=True, exist_ok=True)
             part_dir = folder / "_parts"
