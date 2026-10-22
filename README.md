@@ -8,7 +8,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
 
 - **Cào truyện:** opens the real Chrome browser; lets you choose an EPUB and calls the local `epub2txt` executable. Install WebToEpub separately in Chrome.
 - **Dịch truyện:** local Chinese-to-Vietnamese translation using HachimiMT-60 with CTranslate2 INT8 on CPU. Model weights are downloaded from Hugging Face on first use; no paid API key is required.
-- **Tạo audio dài:** dán toàn bộ nội dung vào khung bên trái hoặc nạp một TXT; chọn giọng và tốc độ rồi bấm tạo. Mỗi lần bấm tạo sẽ gửi toàn bộ văn bản qua `vendor/Vietnamese-Long-Audio-TTS/generate_audio.py` và xuất đúng một MP3. Khung bên phải hiển thị tác vụ đang tạo, đã hoàn tất và lỗi.
+- **Tạo audio dài:** dán toàn bộ nội dung vào khung bên trái hoặc nạp một TXT; chọn giọng và tốc độ. Có thể tạo ngay trên máy hoặc dùng nút **TẠO QUA GITHUB ACTIONS** để tạo MP3 trên GitHub rồi tự tải kết quả về. Mỗi tác vụ tạo một MP3; khung bên phải hiển thị tiến trình, thời gian, kết quả và lỗi.
 - Keeps raw TXT, translated TXT, EPUB and MP3 outputs in local project folders.
 
 ## Requirements
@@ -38,7 +38,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
    powershell -ExecutionPolicy Bypass -File .\scripts\setup_audio.ps1
    ```
 
-5. Update the local long-audio generator from your fork. This downloads the `generate_audio.py` and matching dependencies; it does not upload novel text to GitHub:
+5. Update the local long-audio generator from the private repository. Sign in to GitHub CLI first with `gh auth login`. This downloads `generate_audio.py` and its matching dependencies. The updater itself does not upload novel text:
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\scripts\update_long_audio_tts.ps1
