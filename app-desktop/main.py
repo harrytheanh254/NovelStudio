@@ -46,6 +46,7 @@ TRANSLATION_PYTHON = ROOT_DIR / "envs" / "translation" / "Scripts" / "python.exe
 AUDIO_PYTHON = ROOT_DIR / "envs" / "audio-tts" / "Scripts" / "python.exe"
 TRANSLATION_SCRIPT = ROOT_DIR / "scripts" / "translate_hachimi.py"
 AUDIO_WORKER_SCRIPT = ROOT_DIR / "scripts" / "audio_worker.py"
+MERGE_AUDIO_SCRIPT = ROOT_DIR / "scripts" / "merge_audio.py"
 
 for folder in (EPUB_DIR, RAW_DIR, TRANSLATED_DIR, AUDIO_DIR, TEMP_DIR):
     folder.mkdir(parents=True, exist_ok=True)
@@ -487,6 +488,7 @@ class NovelStudioApp:
         self.audio_list = tk.Listbox(queue_panel, bg="#0E0A09", fg=INK, selectbackground="#641A23",
                                      relief="flat", height=4, font=(FONT, 9), activestyle="none")
         self.audio_list.pack(fill="both", expand=True, padx=16, pady=(5, 12))
+        self.audio_list_paths: dict[int, Path] = {}
 
     def select_audio_file(self):
         path = filedialog.askopenfilename(title="Chọn TXT tiếng Việt", initialdir=str(TRANSLATED_DIR),
@@ -563,21 +565,34 @@ class NovelStudioApp:
         self.audio_note.configure(text=f"Đang tạo {len(pending)} tác vụ...")
         threading.Thread(target=self._audio_worker, args=(pending,), daemon=True).start()
 
+    def _append_audio_result(self, path: Path):
+        self.audio_list.insert("end", f"✓ MP3 hoàn chỉnh · {path.name}")
+        self.audio_list_paths[self.audio_list.size() - 1] = path
+
     def _audio_worker(self, pending: list[dict]):
+        import re
+        import shutil
+
         failed: list[str] = []
         for job_no, job in enumerate(pending, 1):
-            folder = AUDIO_DIR / f"{job['stem']}_{job['created']}"
+            safe_stem = re.sub(r'[<>:"/\\\\|?*\\x00-\\x1f]', "_", job["stem"]).strip(" .") or "audio"
+            folder = AUDIO_DIR / f"{safe_stem}_{job['created']}_{job_no:02d}"
             folder.mkdir(parents=True, exist_ok=True)
+            part_dir = folder / "_parts"
+            part_dir.mkdir(parents=True, exist_ok=True)
             parts = self._split_audio_text(job["text"])
             if not parts:
                 failed.append(job["stem"] + ": nội dung trống")
                 continue
+
+            generated_parts: list[Path] = []
+            failed_parts: list[str] = []
             for part_no, part in enumerate(parts, 1):
-                input_path = TEMP_DIR / f"audio_input_{job['created']}_{part_no:03d}.txt"
-                output_path = folder / f"AU_{job_no:02d}_part_{part_no:03d}.mp3"
+                input_path = TEMP_DIR / f"audio_input_{job['created']}_{job_no:02d}_{part_no:03d}.txt"
+                output_path = part_dir / f"part_{part_no:03d}.mp3"
                 input_path.write_text(part, encoding="utf-8")
                 self.root.after(0, lambda j=job_no, p=part_no, n=len(parts): self.audio_note.configure(
-                    text=f"Đang tạo AU {j} · phần {p}/{n}"))
+                    text=f"Đang tạo audio AU {j} · phần {p}/{n}"))
                 try:
                     proc = subprocess.run(
                         [str(AUDIO_PYTHON), str(AUDIO_WORKER_SCRIPT), "--input", str(input_path),
@@ -587,13 +602,40 @@ class NovelStudioApp:
                     )
                     if proc.returncode != 0:
                         raise RuntimeError((proc.stderr or proc.stdout or "Audio worker trả về lỗi").strip())
-                    self.audio_outputs.append(output_path)
-                    self.root.after(0, lambda path=output_path: self.audio_list.insert("end", f"✓ {path.name}"))
+                    generated_parts.append(output_path)
                 except Exception as exc:
-                    failed.append(f"{job['stem']} part {part_no}: {exc}")
-                    self.root.after(0, lambda p=part_no, d=str(exc): self.audio_list.insert("end", f"✗ part {p}: {d[:140]}"))
+                    detail = f"{job['stem']} phần {part_no}: {exc}"
+                    failed_parts.append(detail)
+                    self.root.after(0, lambda p=part_no, d=str(exc): self.audio_list.insert(
+                        "end", f"✗ Phần {p} lỗi: {d[:120]}"))
                 finally:
                     input_path.unlink(missing_ok=True)
+
+            if failed_parts:
+                failed.extend(failed_parts)
+                self.root.after(0, lambda f=folder: self.audio_list.insert(
+                    "end", f"⚠ Chưa ghép được · phần thành công nằm trong {f.name}\\_parts"))
+                continue
+
+            final_path = folder / f"{safe_stem}.mp3"
+            self.root.after(0, lambda j=job_no: self.audio_note.configure(
+                text=f"Đang ghép các phần thành một MP3 hoàn chỉnh · AU {j}..."))
+            try:
+                proc = subprocess.run(
+                    [str(AUDIO_PYTHON), str(MERGE_AUDIO_SCRIPT), "--output", str(final_path),
+                     "--input", *[str(p) for p in generated_parts]],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=None,
+                    cwd=str(ROOT_DIR),
+                )
+                if proc.returncode != 0:
+                    raise RuntimeError((proc.stderr or proc.stdout or "Không ghép được các phần MP3.").strip())
+                self.audio_outputs.append(final_path)
+                self.root.after(0, lambda path=final_path: self._append_audio_result(path))
+                shutil.rmtree(part_dir, ignore_errors=True)
+            except Exception as exc:
+                failed.append(f"{job['stem']}: lỗi ghép MP3: {exc}")
+                self.root.after(0, lambda d=str(exc): self.audio_list.insert(
+                    "end", f"✗ Lỗi ghép MP3: {d[:160]}"))
         self.root.after(0, lambda: self._audio_generation_finished(failed))
 
     def _audio_generation_finished(self, failed: list[str]):
@@ -609,18 +651,19 @@ class NovelStudioApp:
 
     def open_selected_audio_output(self):
         try:
-            label = self.audio_list.get(self.audio_list.curselection()[0])
+            index = self.audio_list.curselection()[0]
         except Exception:
-            messagebox.showinfo("Chọn kết quả", "Hãy chọn một dòng kết quả trong hàng đợi trước."); return
-        name = label.split(" ", 1)[-1].strip()
-        candidates = list(AUDIO_DIR.rglob("*.mp3"))
-        path = next((p for p in candidates if p.name in label), None)
+            messagebox.showinfo("Chọn kết quả", "Hãy chọn một file MP3 hoàn chỉnh trong hàng đợi trước.")
+            return
+        path = self.audio_list_paths.get(index)
         if path and path.is_file():
             try:
                 os.startfile(str(path))  # type: ignore[attr-defined]
             except Exception:
                 webbrowser.open(path.as_uri())
         else:
+            messagebox.showinfo("Chưa phải file hoàn chỉnh",
+                                "Hãy chọn dòng “MP3 hoàn chỉnh”. Các phần AU trung gian không phải file cuối để đăng.")
             self.open_folder(AUDIO_DIR)
 
     def open_folder(self, folder: Path):
