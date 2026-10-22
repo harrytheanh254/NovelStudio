@@ -65,7 +65,7 @@ def restore_glossary(translated: str, marker_to_target: dict[str, str]) -> str:
     """Restore glossary terms, allowing whitespace if the tokenizer split a marker."""
     result = translated
     for marker, target in marker_to_target.items():
-        pattern = r"\\s*".join(re.escape(char) for char in marker)
+        pattern = r"\s*".join(re.escape(char) for char in marker)
         result = re.sub(pattern, lambda _match, value=target: value, result, flags=re.IGNORECASE)
     return result
 
