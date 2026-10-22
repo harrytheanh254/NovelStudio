@@ -427,12 +427,18 @@ class NovelStudioApp:
 
     def _translation_worker(self, source: Path, output: Path, glossary_path: Path):
         try:
+            # Force UTF-8 in the child interpreter too: Windows legacy code pages can
+            # otherwise fail when libraries print Vietnamese status/error messages.
+            translation_env = os.environ.copy()
+            translation_env["PYTHONUTF8"] = "1"
+            translation_env["PYTHONIOENCODING"] = "utf-8:replace"
+            translation_env.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
             proc = subprocess.run(
                 [str(TRANSLATION_PYTHON), str(TRANSLATION_SCRIPT), "--input", str(source),
                  "--output", str(output), "--cache-dir", str(MODEL_CACHE_DIR),
                  "--glossary", str(glossary_path)],
                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=None,
-                cwd=str(ROOT_DIR),
+                cwd=str(ROOT_DIR), env=translation_env,
             )
             if proc.returncode != 0:
                 raise RuntimeError((proc.stderr or proc.stdout or "Bộ dịch trả về lỗi").strip())
