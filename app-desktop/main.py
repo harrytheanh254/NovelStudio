@@ -227,7 +227,8 @@ class NovelStudioApp:
         self._button(row, "MỞ WORKSPACE", lambda: self.navigate("scrape"), True)
         cards = tk.Frame(page, bg=BG)
         cards.pack(fill="x", padx=26)
-        cards.grid_columnconfigure((0, 1, 2), weight=1, uniform="card")
+        for col in range(3):
+            cards.grid_columnconfigure(col, weight=1, uniform="card")
         card_data = [
             ("01  /  COLLECT", "Cào truyện", "Chrome thật · EPUB → TXT", "MỞ CÔNG CỤ", lambda: self.navigate("scrape")),
             ("02  /  TRANSLATE", "Dịch truyện", "Trung → Việt · chạy CPU", "MỞ BẢN DỊCH", lambda: self.navigate("translate")),
@@ -337,7 +338,8 @@ class NovelStudioApp:
         self._button(tools, "NẠP FILE RAW TXT", self.load_raw_file, True)
         self._button(tools, "MỞ THƯ MỤC BẢN DỊCH", lambda: self.open_folder(TRANSLATED_DIR))
         panes = tk.Frame(page, bg=BG); panes.pack(fill="both", expand=True, padx=26, pady=4)
-        panes.grid_columnconfigure((0, 1), weight=1, uniform="translation")
+        for col in range(2):
+            panes.grid_columnconfigure(col, weight=1, uniform="translation")
         panes.grid_rowconfigure(1, weight=1)
         tk.Label(panes, text="RAW / NGUYÊN BẢN", bg=BG, fg=BRASS, font=(FONT, 9, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 6))
         tk.Label(panes, text="BẢN DỊCH TIẾNG VIỆT", bg=BG, fg=BRASS, font=(FONT, 9, "bold")).grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 6))
