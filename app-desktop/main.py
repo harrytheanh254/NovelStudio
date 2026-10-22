@@ -645,6 +645,12 @@ class NovelStudioApp:
                      state="readonly", width=18, style="Dark.TCombobox").pack(side="left")
         tk.Label(profile, text="Chọn đúng truyện để giữ tên riêng và thuật ngữ nhất quán.",
                  bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
+        if not hasattr(self, "story_title_var"):
+            self.story_title_var = tk.StringVar(value="")
+        tk.Label(profile, text="TÊN TRUYỆN", bg=BG, fg=BRASS,
+                 font=(FONT, 9, "bold")).pack(side="left", padx=(10, 5))
+        ttk.Entry(profile, textvariable=self.story_title_var, width=20,
+                  style="Dark.TCombobox").pack(side="left")
         mode = tk.Frame(page, bg=BG); mode.pack(fill="x", padx=26, pady=(0, 8))
         tk.Label(mode, text="CHẾ ĐỘ DỊCH", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
@@ -659,15 +665,35 @@ class NovelStudioApp:
         panes = tk.Frame(page, bg=BG); panes.pack(fill="both", expand=True, padx=26, pady=4)
         for col in range(2):
             panes.grid_columnconfigure(col, weight=1, uniform="translation")
-        panes.grid_rowconfigure(1, weight=1)
+        panes.grid_rowconfigure(2, weight=1)
         tk.Label(panes, text="RAW / NGUYÊN BẢN", bg=BG, fg=BRASS, font=(FONT, 9, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 6))
         tk.Label(panes, text="BẢN DỊCH TIẾNG VIỆT", bg=BG, fg=BRASS, font=(FONT, 9, "bold")).grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 6))
+        if not hasattr(self, "source_mode_var"):
+            self.source_mode_var = tk.StringVar(value="Dịch raw Trung")
+        source_choice = tk.Frame(panes, bg=BG)
+        source_choice.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        tk.Label(source_choice, text="KIỂU NGUỒN:", bg=BG, fg=MUTED,
+                 font=(FONT, 8, "bold")).pack(side="left", padx=(0, 8))
+        tk.Radiobutton(
+            source_choice, text="Dịch raw Trung", variable=self.source_mode_var,
+            value="Dịch raw Trung", bg=BG, fg=INK, selectcolor=PANEL2,
+            activebackground=BG, activeforeground=INK, font=(FONT, 9)
+        ).pack(side="left", padx=(0, 12))
+        tk.Radiobutton(
+            source_choice, text="Viết lại convert", variable=self.source_mode_var,
+            value="Viết lại convert", bg=BG, fg=INK, selectcolor=PANEL2,
+            activebackground=BG, activeforeground=INK, font=(FONT, 9)
+        ).pack(side="left")
+        tk.Label(
+            panes, text="Sau mỗi lượt, dán kết quả vào CUỐI khung này.",
+            bg=BG, fg=MUTED, font=(FONT, 8), anchor="w"
+        ).grid(row=1, column=1, sticky="w", padx=(10, 0), pady=(0, 6))
         self.raw_box = tk.Text(panes, bg=PANEL, fg=INK, insertbackground=INK, wrap="word", undo=True, relief="flat",
                                font=(FONT, 10), padx=12, pady=12, highlightbackground=BORDER, highlightthickness=1)
         self.vi_box = tk.Text(panes, bg=PANEL, fg=INK, insertbackground=INK, wrap="word", undo=True, relief="flat",
                               font=(FONT, 10), padx=12, pady=12, highlightbackground=BORDER, highlightthickness=1)
-        self.raw_box.grid(row=1, column=0, sticky="nsew")
-        self.vi_box.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+        self.raw_box.grid(row=2, column=0, sticky="nsew")
+        self.vi_box.grid(row=2, column=1, sticky="nsew", padx=(10, 0))
         self.translate_note = tk.Label(bottom, text="Chưa nạp file.", bg=BG, fg=MUTED, font=(FONT, 9), anchor="w")
         self.translate_note.pack(side="left", fill="x", expand=True)
         self._button(bottom, "BẮT ĐẦU DỊCH", self.start_translation, True)
@@ -683,6 +709,12 @@ class NovelStudioApp:
         except Exception as exc:
             messagebox.showerror("Không đọc được TXT", str(exc)); return
         self.raw_path = Path(path)
+        if hasattr(self, "story_title_var") and not self.story_title_var.get().strip():
+            title = self.raw_path.stem
+            for suffix in ("_raw", "_RAW", "_raw_txt", "_RAW_TXT"):
+                if title.endswith(suffix):
+                    title = title[:-len(suffix)]
+            self.story_title_var.set(title)
         self.raw_box.delete("1.0", "end"); self.raw_box.insert("1.0", text)
         self.vi_box.delete("1.0", "end")
         self.translate_note.configure(text=f"Đã nạp: {self.raw_path.name}")
@@ -709,6 +741,15 @@ class NovelStudioApp:
         if not TRANSLATION_PYTHON.is_file():
             messagebox.showerror("Chưa cài bộ dịch", f"Không tìm thấy môi trường dịch:\n{TRANSLATION_PYTHON}\n\nChạy scripts\\setup_translation.ps1 trước."); return
         profile_name = self.glossary_profile_var.get()
+        source_mode = self.source_mode_var.get() if hasattr(self, "source_mode_var") else "Dịch raw Trung"
+        selected_translation_mode = self.translation_mode_var.get()
+        if source_mode == "Viết lại convert" and not selected_translation_mode.startswith("ChatGPT · Qua clipboard"):
+            messagebox.showwarning(
+                "Chế độ này cần ChatGPT qua clipboard",
+                "“Viết lại convert” dùng prompt biên tập văn học riêng. Hãy chọn “ChatGPT · Qua clipboard” "
+                "trong mục CHẾ ĐỘ DỊCH để SẢNH TRUYỆN gửi prompt phù hợp."
+            )
+            return
         glossary_path = GLOSSARY_PROFILES[profile_name]
         if not glossary_path.is_file():
             messagebox.showerror("Thiếu từ điển", f"Không tìm thấy từ điển cho {profile_name}:\n{glossary_path}")
@@ -717,8 +758,15 @@ class NovelStudioApp:
         source.write_text(raw, encoding="utf-8")
         output = TRANSLATED_DIR / ((self.raw_path.stem if self.raw_path else "ban_dich") + "_vi.txt")
         self.translation_running = True
-        if self.translation_mode_var.get().startswith("ChatGPT · Qua clipboard"):
-            self._start_chatgpt_clipboard_session(raw, output, glossary_path, profile_name)
+        if selected_translation_mode.startswith("ChatGPT · Qua clipboard"):
+            title = self.story_title_var.get().strip() if hasattr(self, "story_title_var") else ""
+            if not title and self.raw_path:
+                title = self.raw_path.stem
+            self._start_chatgpt_clipboard_session(
+                raw, output, glossary_path, profile_name,
+                source_mode=source_mode,
+                novel_title=title
+            )
         elif self.translation_mode_var.get().startswith("ChatGPT"):
             self.translate_note.configure(text=f"Đang chuẩn bị dịch văn học bằng ChatGPT · {profile_name}...")
             self.status.set(f"Đang dịch văn học qua ChatGPT · {profile_name}...")
