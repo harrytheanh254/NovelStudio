@@ -354,6 +354,7 @@ class NovelStudioApp:
                      state="readonly", width=18, style="Dark.TCombobox").pack(side="left")
         tk.Label(profile, text="Chọn đúng truyện để giữ tên riêng và thuật ngữ nhất quán.",
                  bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
+        bottom = tk.Frame(page, bg=BG); bottom.pack(fill="x", padx=26, pady=10)
         panes = tk.Frame(page, bg=BG); panes.pack(fill="both", expand=True, padx=26, pady=4)
         for col in range(2):
             panes.grid_columnconfigure(col, weight=1, uniform="translation")
@@ -366,7 +367,6 @@ class NovelStudioApp:
                               font=(FONT, 10), padx=12, pady=12, highlightbackground=BORDER, highlightthickness=1)
         self.raw_box.grid(row=1, column=0, sticky="nsew")
         self.vi_box.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
-        bottom = tk.Frame(page, bg=BG); bottom.pack(fill="x", padx=26, pady=10)
         self.translate_note = tk.Label(bottom, text="Chưa nạp file.", bg=BG, fg=MUTED, font=(FONT, 9), anchor="w")
         self.translate_note.pack(side="left", fill="x", expand=True)
         self._button(bottom, "BẮT ĐẦU DỊCH", self.start_translation, True)
