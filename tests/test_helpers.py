@@ -49,6 +49,20 @@ def test_per_novel_glossaries_protect_core_terms():
         assert restored == "人物：" + target_term
 
 
+def test_translation_never_sends_glossary_term_to_model():
+    module = load_module("translate_hachimi_segmentation", ROOT / "scripts" / "translate_hachimi.py")
+    glossary = {"颜时序": "Nhan Thì Tự"}
+    seen = []
+
+    def fake_translate(fragment):
+        seen.append(fragment)
+        return f"<{fragment}>"
+
+    translated = module.translate_glossary_line("颜时序看向前方。", glossary, fake_translate)
+    assert "颜时序" not in seen
+    assert translated == "Nhan Thì Tự <看向前方。>"
+
+
 def test_audio_split_does_not_drop_text():
     module = load_module("app_main", ROOT / "app-desktop" / "main.py")
     source = ("第一句话。第二句话！第三句话？\n\n" * 100).strip()
@@ -61,6 +75,7 @@ def test_audio_split_does_not_drop_text():
 if __name__ == "__main__":
     test_translation_split_preserves_content()
     test_per_novel_glossaries_protect_core_terms()
+    test_translation_never_sends_glossary_term_to_model()
     test_glossary_protects_and_restores_character_names()
     test_audio_split_does_not_drop_text()
     print("Helper tests passed.")
