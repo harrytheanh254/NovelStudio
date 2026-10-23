@@ -34,6 +34,10 @@ FONT = "Segoe UI"
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
+DRAFT_DIR = DATA_DIR / "drafts"
+TRANSLATION_RAW_DRAFT = DRAFT_DIR / "translation_raw_draft.txt"
+TRANSLATION_VI_DRAFT = DRAFT_DIR / "translation_vi_draft.txt"
+TRANSLATION_DRAFT_META = DRAFT_DIR / "translation_session.json"
 EPUB_DIR = DATA_DIR / "epub"
 RAW_DIR = DATA_DIR / "raw"
 TRANSLATED_DIR = DATA_DIR / "translated"
@@ -357,6 +361,10 @@ class NovelStudioApp:
         self.root.configure(bg=BG)
         self.status = tk.StringVar(value="Sẵn sàng · File được lưu trên máy bạn")
         self.raw_path: Path | None = None
+        self.translation_raw_draft = ""
+        self.translation_vi_draft = ""
+        self.translation_draft_meta: dict = {}
+        self._translation_draft_after_id: str | None = None
         self.audio_path: Path | None = None
         self.audio_paths: list[Path] = []
         self.translation_running = False
@@ -368,6 +376,8 @@ class NovelStudioApp:
         self._audio_status_after_id: str | None = None
         self._audio_spinner_angle = 0
         self.current_page = "home"
+        self._load_translation_draft()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._configure_styles()
         self._shell()
         self.show_home()
@@ -446,6 +456,8 @@ class NovelStudioApp:
                           fg=INK if key == active else MUTED)
 
     def _clear(self, active):
+        if getattr(self, "current_page", None) == "translate":
+            self._save_translation_draft()
         for child in self.content.winfo_children():
             child.destroy()
         self._select_nav(active)
@@ -610,14 +622,17 @@ class NovelStudioApp:
         tk.Label(profile, text="TỪ ĐIỂN BỘ TRUYỆN", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
         if not hasattr(self, "glossary_profile_var"):
-            self.glossary_profile_var = tk.StringVar(value="Lâm Thánh")
+            saved_profile = self.translation_draft_meta.get("glossary_profile", "Lâm Thánh")
+            if saved_profile not in GLOSSARY_PROFILES:
+                saved_profile = "Lâm Thánh"
+            self.glossary_profile_var = tk.StringVar(value=saved_profile)
         ttk.Combobox(profile, textvariable=self.glossary_profile_var,
                      values=("Lâm Thánh", "Vớt Thi Nhân", "Từ điển chung"),
                      state="readonly", width=18, style="Dark.TCombobox").pack(side="left")
         tk.Label(profile, text="Chọn đúng truyện để giữ tên riêng và thuật ngữ nhất quán.",
                  bg=BG, fg=MUTED, font=(FONT, 9)).pack(side="left", padx=10)
         if not hasattr(self, "story_title_var"):
-            self.story_title_var = tk.StringVar(value="")
+            self.story_title_var = tk.StringVar(value=str(self.translation_draft_meta.get("story_title", "")))
         tk.Label(profile, text="TÊN TRUYỆN", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(10, 5))
         ttk.Entry(profile, textvariable=self.story_title_var, width=20,
@@ -626,7 +641,11 @@ class NovelStudioApp:
         tk.Label(mode, text="CHẾ ĐỘ DỊCH", bg=BG, fg=BRASS,
                  font=(FONT, 9, "bold")).pack(side="left", padx=(0, 10))
         if not hasattr(self, "translation_mode_var"):
-            self.translation_mode_var = tk.StringVar(value="HachimiMT-60 · Cục bộ")
+            saved_mode = self.translation_draft_meta.get("translation_mode", "HachimiMT-60 · Cục bộ")
+            allowed_modes = ("HachimiMT-60 · Cục bộ", "ChatGPT · Dịch văn học", "ChatGPT · Qua clipboard")
+            if saved_mode not in allowed_modes:
+                saved_mode = "HachimiMT-60 · Cục bộ"
+            self.translation_mode_var = tk.StringVar(value=saved_mode)
         ttk.Combobox(mode, textvariable=self.translation_mode_var,
                      values=("HachimiMT-60 · Cục bộ", "ChatGPT · Dịch văn học", "ChatGPT · Qua clipboard"),
                      state="readonly", width=25, style="Dark.TCombobox").pack(side="left")
@@ -640,7 +659,10 @@ class NovelStudioApp:
         tk.Label(panes, text="RAW / NGUYÊN BẢN", bg=BG, fg=BRASS, font=(FONT, 9, "bold")).grid(row=0, column=0, sticky="w", pady=(0, 6))
         tk.Label(panes, text="BẢN DỊCH TIẾNG VIỆT", bg=BG, fg=BRASS, font=(FONT, 9, "bold")).grid(row=0, column=1, sticky="w", padx=(10, 0), pady=(0, 6))
         if not hasattr(self, "source_mode_var"):
-            self.source_mode_var = tk.StringVar(value="Dịch raw Trung")
+            saved_source_mode = self.translation_draft_meta.get("source_mode", "Dịch raw Trung")
+            if saved_source_mode not in ("Dịch raw Trung", "Viết lại convert"):
+                saved_source_mode = "Dịch raw Trung"
+            self.source_mode_var = tk.StringVar(value=saved_source_mode)
         source_choice = tk.Frame(panes, bg=BG)
         source_choice.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         tk.Label(source_choice, text="KIỂU NGUỒN:", bg=BG, fg=MUTED,
@@ -665,10 +687,120 @@ class NovelStudioApp:
                               font=(FONT, 10), padx=12, pady=12, highlightbackground=BORDER, highlightthickness=1)
         self.raw_box.grid(row=2, column=0, sticky="nsew")
         self.vi_box.grid(row=2, column=1, sticky="nsew", padx=(10, 0))
-        self.translate_note = tk.Label(bottom, text="Chưa nạp file.", bg=BG, fg=MUTED, font=(FONT, 9), anchor="w")
+        self.raw_box.insert("1.0", self.translation_raw_draft)
+        self.vi_box.insert("1.0", self.translation_vi_draft)
+        self.raw_box.edit_modified(False)
+        self.vi_box.edit_modified(False)
+        self.raw_box.bind("<<Modified>>", self._translation_text_modified)
+        self.vi_box.bind("<<Modified>>", self._translation_text_modified)
+        note_text = "Đã khôi phục bản nháp tự động." if (self.translation_raw_draft or self.translation_vi_draft) else "Chưa nạp file."
+        self.translate_note = tk.Label(bottom, text=note_text, bg=BG, fg=MUTED, font=(FONT, 9), anchor="w")
         self.translate_note.pack(side="left", fill="x", expand=True)
         self._button(bottom, "BẮT ĐẦU DỊCH", self.start_translation, True)
         self._button(bottom, "LƯU BẢN DỊCH", self.save_translation)
+
+    def _load_translation_draft(self):
+        """Restore the last translation workspace draft from local files."""
+        try:
+            self.translation_raw_draft = (
+                TRANSLATION_RAW_DRAFT.read_text(encoding="utf-8")
+                if TRANSLATION_RAW_DRAFT.is_file() else ""
+            )
+            self.translation_vi_draft = (
+                TRANSLATION_VI_DRAFT.read_text(encoding="utf-8")
+                if TRANSLATION_VI_DRAFT.is_file() else ""
+            )
+            if TRANSLATION_DRAFT_META.is_file():
+                loaded = json.loads(TRANSLATION_DRAFT_META.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    self.translation_draft_meta = loaded
+            saved_path = str(self.translation_draft_meta.get("raw_path") or "").strip()
+            if saved_path:
+                self.raw_path = Path(saved_path)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            # Never block app startup if a draft file is incomplete/corrupt.
+            self.translation_draft_meta = {}
+            self.status.set(f"Không đọc được bản nháp tự động: {exc}")
+
+    def _translation_text_modified(self, event=None):
+        """Debounce draft writes while the user is typing or pasting long text."""
+        try:
+            widget = getattr(event, "widget", None)
+            if widget is not None and widget.edit_modified():
+                widget.edit_modified(False)
+        except tk.TclError:
+            pass
+        pending = getattr(self, "_translation_draft_after_id", None)
+        if pending:
+            try:
+                self.root.after_cancel(pending)
+            except tk.TclError:
+                pass
+        try:
+            self._translation_draft_after_id = self.root.after(650, self._save_translation_draft)
+        except tk.TclError:
+            self._translation_draft_after_id = None
+
+    def _save_translation_draft(self):
+        """Persist raw text, Vietnamese output, and translation choices locally."""
+        self._translation_draft_after_id = None
+        try:
+            if hasattr(self, "raw_box") and self.raw_box.winfo_exists():
+                self.translation_raw_draft = self.raw_box.get("1.0", "end-1c")
+            if hasattr(self, "vi_box") and self.vi_box.winfo_exists():
+                self.translation_vi_draft = self.vi_box.get("1.0", "end-1c")
+        except tk.TclError:
+            pass
+
+        try:
+            DRAFT_DIR.mkdir(parents=True, exist_ok=True)
+            for path, value in (
+                (TRANSLATION_RAW_DRAFT, self.translation_raw_draft),
+                (TRANSLATION_VI_DRAFT, self.translation_vi_draft),
+            ):
+                temp_path = path.with_suffix(path.suffix + ".tmp")
+                temp_path.write_text(value, encoding="utf-8")
+                os.replace(temp_path, path)
+
+            def value_of(attribute, fallback=""):
+                variable = getattr(self, attribute, None)
+                try:
+                    return variable.get() if variable is not None else self.translation_draft_meta.get(attribute.removesuffix("_var"), fallback)
+                except (tk.TclError, AttributeError):
+                    return fallback
+
+            metadata = {
+                "raw_path": str(self.raw_path) if self.raw_path else "",
+                "glossary_profile": value_of("glossary_profile_var", "Lâm Thánh"),
+                "story_title": value_of("story_title_var", ""),
+                "translation_mode": value_of("translation_mode_var", "HachimiMT-60 · Cục bộ"),
+                "source_mode": value_of("source_mode_var", "Dịch raw Trung"),
+            }
+            temp_meta = TRANSLATION_DRAFT_META.with_suffix(".json.tmp")
+            temp_meta.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(temp_meta, TRANSLATION_DRAFT_META)
+            self.translation_draft_meta = metadata
+        except OSError as exc:
+            try:
+                if hasattr(self, "status"):
+                    self.status.set(f"Không lưu được bản nháp: {exc}")
+            except tk.TclError:
+                pass
+
+    def _on_close(self):
+        """Save pending draft edits before closing the desktop app."""
+        pending = getattr(self, "_translation_draft_after_id", None)
+        if pending:
+            try:
+                self.root.after_cancel(pending)
+            except tk.TclError:
+                pass
+            self._translation_draft_after_id = None
+        self._save_translation_draft()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     def load_raw_file(self):
         path = filedialog.askopenfilename(title="Chọn raw TXT", initialdir=str(RAW_DIR),
@@ -690,7 +822,12 @@ class NovelStudioApp:
             self.story_title_var.set(title)
         self.raw_box.delete("1.0", "end"); self.raw_box.insert("1.0", text)
         self.vi_box.delete("1.0", "end")
+        self.raw_box.edit_modified(False)
+        self.vi_box.edit_modified(False)
         self.translate_note.configure(text=f"Đã nạp: {self.raw_path.name}")
+        self.translation_raw_draft = text
+        self.translation_vi_draft = ""
+        self._save_translation_draft()
         self.status.set(f"Đã nạp raw: {self.raw_path.name}")
 
     def save_translation(self):
@@ -709,6 +846,7 @@ class NovelStudioApp:
         if self.translation_running:
             return
         raw = self.raw_box.get("1.0", "end-1c")
+        self._save_translation_draft()
         if not raw.strip():
             messagebox.showwarning("Chưa có raw", "Hãy nạp hoặc dán nội dung vào khung Raw."); return
         if not TRANSLATION_PYTHON.is_file():
