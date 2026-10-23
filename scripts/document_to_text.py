@@ -29,7 +29,7 @@ SUPPORTED_DOCUMENT_EXTENSIONS = (
 
 def decode_bytes(data: bytes) -> str:
     """Decode common Windows, UTF-8 and Chinese text encodings without dropping bytes."""
-    for encoding in ("utf-8-sig", "utf-16", "utf-32", "gb18030", "cp1252"):
+    for encoding in ("utf-8-sig", "utf-32", "utf-16", "gb18030", "cp1252"):
         try:
             return data.decode(encoding)
         except (UnicodeDecodeError, UnicodeError):
@@ -100,6 +100,19 @@ def html_to_text(data: bytes) -> str:
     parser.feed(decode_bytes(data))
     parser.close()
     return parser.text()
+
+
+def xml_to_text(data: bytes) -> str:
+    """Extract leaf-node text from a plain XML document."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as exc:
+        raise ValueError("Tệp XML không hợp lệ.") from exc
+    pieces = []
+    for node in root.iter():
+        if len(node) == 0 and node.text and node.text.strip():
+            pieces.append(node.text.strip())
+    return normalize_extracted_text("\n".join(pieces))
 
 
 def rtf_to_text(data: bytes) -> str:
@@ -330,6 +343,8 @@ def convert_document_to_text(source: Path) -> str:
         text = decode_bytes(source.read_bytes())
     elif extension in HTML_EXTENSIONS:
         text = html_to_text(source.read_bytes())
+    elif extension == ".xml":
+        text = xml_to_text(source.read_bytes())
     elif extension == ".rtf":
         text = rtf_to_text(source.read_bytes())
     elif extension == ".docx":
@@ -366,6 +381,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         extension = args.input.suffix.lower()
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         if extension in {".mobi", ".azw", ".azw3"}:
             calibre_to_text(args.input, args.output)
         elif extension == ".doc":
@@ -374,7 +390,7 @@ def main() -> int:
             text = convert_document_to_text(args.input)
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(text, encoding="utf-8", newline="")
-        if not args.output.is_file() or not args.output.read_text(encoding="utf-8").strip():
+        if not args.output.is_file() or not decode_bytes(args.output.read_bytes()).strip():
             raise RuntimeError("Đã chạy chuyển đổi nhưng kết quả TXT rỗng.")
         print(f"[SUCCESS] Đã chuyển {args.input.name} thành {args.output.name}.", flush=True)
         return 0
