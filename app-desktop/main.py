@@ -57,6 +57,7 @@ TRANSLATION_SCRIPT = ROOT_DIR / "scripts" / "translate_hachimi.py"
 CHATGPT_TRANSLATION_SCRIPT = ROOT_DIR / "scripts" / "chatgpt_translation.py"
 AUDIO_WORKER_SCRIPT = ROOT_DIR / "scripts" / "audio_worker.py"
 AUDIO_TTS_GENERATOR = ROOT_DIR / "vendor" / "Vietnamese-Long-Audio-TTS" / "generate_audio.py"
+DOCUMENT_TO_TEXT_SCRIPT = ROOT_DIR / "scripts" / "document_to_text.py"
 MERGE_AUDIO_SCRIPT = ROOT_DIR / "scripts" / "merge_audio.py"
 GITHUB_AUDIO_REPO = os.environ.get(
     "NOVELSTUDIO_GITHUB_AUDIO_REPO",
@@ -698,28 +699,31 @@ class NovelStudioApp:
         self._button(source_buttons, "MỞ THƯ MỤC EPUB", lambda: self.open_folder(EPUB_DIR), width=160)
 
         convert_panel = self._panel(
-            workspace, "CHUYỂN ĐỔI TÀI LIỆU",
-            "Chuyển file EPUB đã thu thập thành TXT để dùng trong mục Dịch truyện."
+            workspace, "CHUYỂN ĐỔI TÀI LIỆU → TXT",
+            "Chuyển các định dạng tài liệu phổ biến thành TXT để dùng trong mục Dịch truyện."
         )
         convert_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0), pady=3)
         file_card = tk.Frame(convert_panel, bg="#100C0B",
                              highlightbackground=BORDER, highlightthickness=1)
         file_card.pack(fill="x", padx=14, pady=(0, 9))
-        tk.Label(file_card, text="EPUB  →  TXT", bg="#100C0B", fg=BRASS,
+        tk.Label(file_card, text="TÀI LIỆU  →  TXT", bg="#100C0B", fg=BRASS,
                  font=(FONT, 10, "bold")).pack(anchor="w", padx=12, pady=(12, 4))
-        tk.Label(file_card, text="Chọn tệp EPUB từ máy tính", bg="#100C0B", fg=MUTED,
-                 font=(FONT, 9)).pack(anchor="w", padx=12, pady=(0, 8))
+        tk.Label(
+            file_card,
+            text="EPUB · TXT/MD · HTML · DOCX/ODT · RTF · FB2 · PDF văn bản",
+            bg="#100C0B", fg=MUTED, font=(FONT, 8), wraplength=330, justify="left"
+        ).pack(anchor="w", padx=12, pady=(0, 8))
         self.epub_label = tk.Label(
-            file_card, text="Chưa chọn file EPUB", bg="#100C0B", fg=DIM,
+            file_card, text="Chưa chọn tài liệu", bg="#100C0B", fg=DIM,
             font=(FONT, 8), anchor="w", wraplength=300, justify="left"
         )
         self.epub_label.pack(fill="x", padx=12, pady=(0, 12))
         convert_buttons = tk.Frame(convert_panel, bg=PANEL)
         convert_buttons.pack(fill="x", padx=14, pady=(0, 8))
-        self._button(convert_buttons, "CHỌN EPUB & CHUYỂN TXT", self.convert_epub, True, width=190)
+        self._button(convert_buttons, "CHỌN TÀI LIỆU & CHUYỂN TXT", self.convert_epub, True, width=210)
         self._button(convert_buttons, "MỞ RAW TXT", lambda: self.open_folder(RAW_DIR), width=125)
         tk.Label(
-            convert_panel, text="File gốc EPUB được giữ lại. TXT đầu ra nằm trong data/raw.",
+            convert_panel, text="File gốc không bị xóa. MOBI/AZW cần Calibre; DOC cũ cần LibreOffice; PDF scan cần OCR riêng.",
             bg=PANEL, fg=MUTED, font=(FONT, 8), wraplength=360, justify="left"
         ).pack(anchor="w", padx=14, pady=(0, 12))
 
@@ -731,7 +735,7 @@ class NovelStudioApp:
             highlightbackground="#30201B", highlightthickness=1
         )
         self.scrape_log.pack(fill="x", expand=False, padx=14, pady=(0, 12))
-        self._log(self.scrape_log, "Sẵn sàng. EPUB không bị xóa; kết quả TXT được sao chép vào data/raw.")
+        self._log(self.scrape_log, "Sẵn sàng. Có thể chọn nhiều loại tài liệu; file nguồn luôn được giữ nguyên.")
 
     def _log(self, widget, text):
         widget.configure(state="normal")
@@ -758,17 +762,111 @@ class NovelStudioApp:
             messagebox.showwarning("Chưa tìm thấy Chrome", "Không tìm thấy chrome.exe. Hãy kiểm tra Chrome đã được cài chưa.")
 
     def convert_epub(self):
-        path = filedialog.askopenfilename(title="Chọn EPUB", initialdir=str(EPUB_DIR),
-                                          filetypes=[("EPUB", "*.epub"), ("All files", "*.*")])
-        if not path:
+        supported_pattern = (
+            "*.epub *.txt *.md *.markdown *.rst *.log *.csv *.json *.jsonl "
+            "*.yaml *.yml *.toml *.ini *.conf *.cfg *.tsv *.html *.htm *.xhtml "
+            "*.xml *.docx *.odt *.fb2 *.rtf *.pdf *.mobi *.azw *.azw3 *.doc"
+        )
+        selected = filedialog.askopenfilename(
+            title="Chọn tài liệu cần chuyển thành TXT",
+            initialdir=str(EPUB_DIR),
+            filetypes=[
+                ("Tài liệu được hỗ trợ", supported_pattern),
+                ("Sách điện tử", "*.epub *.fb2 *.mobi *.azw *.azw3"),
+                ("Văn bản và tài liệu", "*.txt *.md *.markdown *.html *.htm *.docx *.odt *.rtf *.pdf"),
+                ("Tất cả tệp", "*.*"),
+            ],
+        )
+        if not selected:
             return
-        epub = Path(path)
-        self.epub_label.configure(text=str(epub), fg=INK)
-        if not EPUB2TXT_EXE.is_file():
-            messagebox.showerror("Thiếu epub2txt", f"Không tìm thấy công cụ:\n{EPUB2TXT_EXE}\n\nHãy cài epub2txt vào môi trường đã chuẩn bị.")
+        source = Path(selected)
+        self.epub_label.configure(text=f"{source.name}  ·  {source.suffix.upper() or 'FILE'}", fg=INK)
+
+        if source.suffix.lower() == ".epub":
+            if not EPUB2TXT_EXE.is_file():
+                messagebox.showerror(
+                    "Thiếu epub2txt",
+                    f"Không tìm thấy công cụ:\n{EPUB2TXT_EXE}\n\nHãy cài epub2txt vào môi trường đã chuẩn bị."
+                )
+                return
+            self.status.set("Đang chuyển EPUB sang TXT...")
+            if hasattr(self, "scrape_log"):
+                self._log(self.scrape_log, f"[ĐANG CHẠY] EPUB → TXT · {source.name}")
+            threading.Thread(target=self._convert_worker, args=(source,), daemon=True).start()
             return
-        self.status.set("Đang chuyển EPUB sang TXT...")
-        threading.Thread(target=self._convert_worker, args=(epub,), daemon=True).start()
+
+        destination = self._unique_raw_destination(source)
+        try:
+            if source.suffix.lower() == ".txt" and source.resolve() == destination.resolve():
+                self.root.after(0, lambda: self._conversion_succeeded(destination))
+                return
+        except OSError:
+            pass
+
+        if not TRANSLATION_PYTHON.is_file():
+            messagebox.showerror(
+                "Chưa cài môi trường chuyển đổi",
+                f"Không tìm thấy Python của SẢNH TRUYỆN:\n{TRANSLATION_PYTHON}"
+            )
+            return
+        if not DOCUMENT_TO_TEXT_SCRIPT.is_file():
+            messagebox.showerror(
+                "Thiếu bộ chuyển đổi",
+                f"Không tìm thấy mô-đun chuyển đổi:\n{DOCUMENT_TO_TEXT_SCRIPT}"
+            )
+            return
+
+        self.status.set(f"Đang chuyển {source.suffix.upper()} sang TXT...")
+        if hasattr(self, "scrape_log"):
+            self._log(self.scrape_log, f"[ĐANG CHẠY] {source.suffix.upper()} → TXT · {source.name}")
+        threading.Thread(
+            target=self._convert_document_worker,
+            args=(source, destination),
+            daemon=True
+        ).start()
+
+    @staticmethod
+    def _unique_raw_destination(source: Path) -> Path:
+        """Choose a TXT path without overwriting an existing raw file."""
+        destination = RAW_DIR / f"{source.stem}.txt"
+        try:
+            if source.resolve() == destination.resolve():
+                return destination
+        except OSError:
+            pass
+        if not destination.exists():
+            return destination
+        candidate = RAW_DIR / f"{source.stem}_converted.txt"
+        if not candidate.exists():
+            return candidate
+        index = 2
+        while True:
+            candidate = RAW_DIR / f"{source.stem}_converted_{index}.txt"
+            if not candidate.exists():
+                return candidate
+            index += 1
+
+    def _convert_document_worker(self, source: Path, destination: Path):
+        try:
+            env = os.environ.copy()
+            env["PYTHONUTF8"] = "1"
+            env["PYTHONIOENCODING"] = "utf-8:replace"
+            proc = subprocess.run(
+                [
+                    str(TRANSLATION_PYTHON), "-X", "utf8",
+                    str(DOCUMENT_TO_TEXT_SCRIPT),
+                    "--input", str(source),
+                    "--output", str(destination),
+                ],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=900, cwd=str(ROOT_DIR), env=env
+            )
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout or "Bộ chuyển đổi trả về lỗi.").strip()
+                raise RuntimeError(detail)
+            self.root.after(0, lambda: self._conversion_succeeded(destination))
+        except Exception as exc:
+            self.root.after(0, lambda detail=str(exc): self._conversion_failed(detail))
 
     def _convert_worker(self, epub: Path):
         try:
@@ -781,7 +879,7 @@ class NovelStudioApp:
             produced = next((p for p in candidates if p.is_file() and p.stat().st_mtime >= epub.stat().st_mtime - 2), None)
             if produced is None:
                 raise RuntimeError("Lệnh hoàn tất nhưng không tìm thấy file TXT đầu ra cạnh EPUB.")
-            destination = RAW_DIR / produced.name
+            destination = self._unique_raw_destination(epub)
             if produced.resolve() != destination.resolve():
                 shutil.copy2(produced, destination)
             self.root.after(0, lambda: self._conversion_succeeded(destination))
@@ -795,7 +893,7 @@ class NovelStudioApp:
         messagebox.showinfo("Hoàn tất", f"Đã lưu TXT tại:\n{destination}\n\nBạn có thể mở mục Dịch truyện.")
 
     def _conversion_failed(self, detail: str):
-        self.status.set("Chuyển EPUB thất bại.")
+        self.status.set("Chuyển đổi tài liệu thất bại.")
         if hasattr(self, "scrape_log"):
             self._log(self.scrape_log, "[LỖI] " + detail)
         messagebox.showerror("Không chuyển được EPUB", detail)
