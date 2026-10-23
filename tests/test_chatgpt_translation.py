@@ -1,5 +1,9 @@
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+import scripts.chatgpt_translation as chatgpt_module
 from scripts.chatgpt_translation import make_chunks, make_instructions, split_ending
 
 
@@ -110,3 +114,19 @@ class ThreeChapterBatchTests(unittest.TestCase):
     def test_missing_chapter_headings_is_reported(self):
         with self.assertRaisesRegex(ValueError, "Không nhận ra tiêu đề chương"):
             self.app_module.split_novel_into_batches("Chỉ có văn bản mà không có tiêu đề chương.")
+
+
+class PendingClientIdTests(unittest.TestCase):
+    def test_pending_issued_client_id_is_saved_and_cleared(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pending_path = Path(temp_dir) / "pending_client_id.txt"
+            with patch.object(chatgpt_module, "PENDING_CLIENT_ID_PATH", pending_path):
+                chatgpt_module.save_pending_client_id("oaiapp_test_client")
+                self.assertEqual(
+                    chatgpt_module.load_pending_client_id(),
+                    "oaiapp_test_client",
+                )
+                chatgpt_module.clear_pending_client_id()
+                self.assertIsNone(chatgpt_module.load_pending_client_id())
+
+
