@@ -54,5 +54,75 @@ class LiteraryModesTests(unittest.TestCase):
         self.assertNotIn('CHỈ DỊCH NGUYÊN VĂN TIẾNG TRUNG SAU ĐÂY', prompt)
 
 
+class TranslationDraftPersistenceTests(unittest.TestCase):
+    def test_translation_raw_and_vietnamese_drafts_restore_from_local_files(self):
+        import tempfile
+        from unittest.mock import patch
+
+        class TextStub:
+            def __init__(self, value):
+                self.value = value
+
+            def winfo_exists(self):
+                return True
+
+            def get(self, _start, _end):
+                return self.value
+
+        class VarStub:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+        class StatusStub:
+            def set(self, value):
+                self.value = value
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            draft_dir = Path(temp_dir)
+            raw_path = draft_dir / "translation_raw_draft.txt"
+            vi_path = draft_dir / "translation_vi_draft.txt"
+            meta_path = draft_dir / "translation_session.json"
+            with (
+                patch.object(APP, "DRAFT_DIR", draft_dir),
+                patch.object(APP, "TRANSLATION_RAW_DRAFT", raw_path),
+                patch.object(APP, "TRANSLATION_VI_DRAFT", vi_path),
+                patch.object(APP, "TRANSLATION_DRAFT_META", meta_path),
+            ):
+                app = APP.NovelStudioApp.__new__(APP.NovelStudioApp)
+                app.translation_raw_draft = ""
+                app.translation_vi_draft = ""
+                app.translation_draft_meta = {}
+                app._translation_draft_after_id = None
+                app.raw_path = Path("D:/NovelStudio/data/raw/demo.txt")
+                app.raw_box = TextStub("第一章，天崩開局\n正文")
+                app.vi_box = TextStub("Chương một\nNội dung")
+                app.glossary_profile_var = VarStub("Từ điển chung")
+                app.story_title_var = VarStub("Truyện thử")
+                app.translation_mode_var = VarStub("ChatGPT · Qua clipboard")
+                app.source_mode_var = VarStub("Dịch raw Trung")
+                app.status = StatusStub()
+
+                app._save_translation_draft()
+                self.assertEqual(raw_path.read_text(encoding="utf-8"), "第一章，天崩開局\n正文")
+                self.assertEqual(vi_path.read_text(encoding="utf-8"), "Chương một\nNội dung")
+
+                restored = APP.NovelStudioApp.__new__(APP.NovelStudioApp)
+                restored.translation_raw_draft = ""
+                restored.translation_vi_draft = ""
+                restored.translation_draft_meta = {}
+                restored.raw_path = None
+                restored.status = StatusStub()
+                restored._load_translation_draft()
+
+                self.assertEqual(restored.translation_raw_draft, "第一章，天崩開局\n正文")
+                self.assertEqual(restored.translation_vi_draft, "Chương một\nNội dung")
+                self.assertEqual(restored.raw_path, Path("D:/NovelStudio/data/raw/demo.txt"))
+                self.assertEqual(restored.translation_draft_meta["glossary_profile"], "Từ điển chung")
+                self.assertEqual(restored.translation_draft_meta["story_title"], "Truyện thử")
+
+
 if __name__ == '__main__':
     unittest.main()
