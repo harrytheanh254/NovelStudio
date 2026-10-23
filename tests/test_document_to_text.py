@@ -38,7 +38,7 @@ class DocumentToTextTests(unittest.TestCase):
 
     def test_rtf_removes_formatting_controls_and_keeps_text(self):
         text = CONVERTER.rtf_to_text(
-            br"{\rtf1\ansi \b 第一章\b0\par 正文内容}"
+            r"{\rtf1\ansi \b 第一章\b0\par 正文内容}".encode("utf-8")
         )
         self.assertIn("第一章", text)
         self.assertIn("正文内容", text)
