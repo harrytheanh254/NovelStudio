@@ -32,6 +32,7 @@ REQUIRED_SCOPES = {"openid", "profile", "email", "offline_access", "resource.inv
 SERVICE_DIR = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "SanhTruyen"
 HOST_ID_PATH = SERVICE_DIR / "siwc_host_id.txt"
 CREDENTIAL_PATH = SERVICE_DIR / "chatgpt_credentials.dpapi"
+PENDING_CLIENT_ID_PATH = SERVICE_DIR / "pending_client_id.txt"
 MAX_CHUNK_CHARS = 3800
 
 for _stream in (sys.stdout, sys.stderr):
@@ -125,6 +126,36 @@ def get_host_id() -> str:
     return value
 
 
+def load_pending_client_id() -> str | None:
+    """Read an issued client ID left by an interrupted first-time OAuth exchange."""
+    try:
+        value = PENDING_CLIENT_ID_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return None
+    if not value or value == "dynamic_agent_client":
+        return None
+    return value
+
+
+def save_pending_client_id(client_id: str) -> None:
+    """Remember the issued client ID so a fresh authorization can recover from invalid_grant."""
+    if not client_id or client_id == "dynamic_agent_client":
+        return
+    PENDING_CLIENT_ID_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = PENDING_CLIENT_ID_PATH.with_suffix(".tmp")
+    temp_path.write_text(client_id, encoding="utf-8")
+    os.replace(temp_path, PENDING_CLIENT_ID_PATH)
+
+
+def clear_pending_client_id() -> None:
+    try:
+        PENDING_CLIENT_ID_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _read_json_response(response) -> dict:
     body = response.read().decode("utf-8", errors="replace")
     if not body:
@@ -165,12 +196,15 @@ def request_json(url: str, *, method: str = "GET", bearer: str | None = None,
             code = str(error.get("code") or "")
             message = str(error.get("message") or error.get("type") or "Lỗi từ dịch vụ.")
         else:
-            code = str(data.get("code") or "") if isinstance(data, dict) else ""
-            message = str(data.get("detail") or data.get("message") or raw or "Lỗi từ dịch vụ.") if isinstance(data, dict) else raw
+            code = str((data.get("code") or (error if isinstance(error, str) else "")) or "") if isinstance(data, dict) else ""
+            message = str(data.get("error_description") or data.get("detail") or data.get("message") or raw or "Lỗi từ dịch vụ.") if isinstance(data, dict) else raw
         detail = f"HTTP {exc.code}"
         if code:
             detail += f" · {code}"
-        if code == "subscription_sharing_user_not_eligible":
+        if code == "invalid_grant":
+            message = ("Mã ủy quyền đã hết hạn hoặc không còn hợp lệ. Đừng dùng lại mã cũ; hãy bấm KẾT NỐI CHATGPT để "
+                       "bắt đầu phiên mới. Mã client đã đăng ký được giữ lại để thử lại.")
+        elif code == "subscription_sharing_user_not_eligible":
             message = ("Tài khoản hoặc workspace ChatGPT này chưa đủ điều kiện dùng hạn mức ChatGPT trong ứng dụng. "
                        "Tài liệu hiện tại ghi tính năng này dành cho tài khoản Plus/Pro đủ điều kiện.")
         elif code == "subscription_sharing_usage_limit_exceeded":
@@ -237,13 +271,15 @@ def login() -> int:
         old = None
         status("Không đọc được phiên cũ; sẽ yêu cầu đăng nhập mới.")
     host_id = get_host_id()
+    pending_client_id = load_pending_client_id()
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(48)
     challenge = b64url(hashlib.sha256(verifier.encode("ascii")).digest())
     server, callback_queue = _callback_server(state)
     redirect_uri = f"http://127.0.0.1:{server.server_port}/auth/callback"
-    requested_client_id = str(old.get("client_id")) if old and old.get("client_id") else "dynamic_agent_client"
+    saved_client_id = str(old.get("client_id")) if old and old.get("client_id") else None
+    requested_client_id = saved_client_id or pending_client_id or "dynamic_agent_client"
     params = {
         "client_id": requested_client_id,
         "ext_agent_host_id": host_id,
@@ -258,7 +294,7 @@ def login() -> int:
     }
     if requested_client_id == "dynamic_agent_client":
         params["agent_name_hint"] = APP_NAME
-    elif old:
+    elif old and old.get("client_id") == requested_client_id:
         if old.get("id_token"):
             params["id_token_hint"] = old["id_token"]
         if old.get("email"):
@@ -295,6 +331,9 @@ def login() -> int:
         if not issued_client_id or issued_client_id == "dynamic_agent_client":
             raise RuntimeError("OpenAI không trả về client ID đã đăng ký; chưa thể hoàn tất kết nối.")
         client_id = issued_client_id
+        # If code exchange fails (e.g. invalid_grant), reuse this issued ID on the next
+        # fresh authorization rather than registering a new client on every attempt.
+        save_pending_client_id(client_id)
     else:
         client_id = requested_client_id
         if issued_client_id and issued_client_id != client_id:
@@ -352,6 +391,7 @@ def login() -> int:
         "saved_at": int(time.time()),
     }
     save_credentials(credentials)
+    clear_pending_client_id()
     status(f"Đã đăng nhập và lưu thông tin xác thực an toàn trên máy này{(' cho ' + credentials['email']) if credentials['email'] else ''}.")
     if "chatgpt.tokens.use.direct" not in credentials["scopes"]:
         print("[WARNING] Đăng nhập thành công nhưng ChatGPT chưa cấp quyền sử dụng hạn mức AI cho ứng dụng này.", flush=True)
