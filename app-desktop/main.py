@@ -940,14 +940,28 @@ class NovelStudioApp:
                     + (workflow_info.stderr or workflow_info.stdout or "")[-1600:]
                 )
 
-            packed = gzip.compress(job["text"].encode("utf-8"), compresslevel=6, mtime=0)
-            encoded = base64.b64encode(packed).decode("ascii")
-            if len(encoded) > GITHUB_AUDIO_MAX_ENCODED_CHARS:
+            upload_dir = TEMP_DIR / f"github_audio_upload_{job_id}"
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            upload_path = upload_dir / "story.txt"
+            upload_path.write_text(job["text"], encoding="utf-8")
+            tag = f"st-request-{request_id}"
+            dispatched = False
+
+            upload = self._run_github_cli(
+                [
+                    "release", "create", tag, str(upload_path),
+                    "--repo", repo,
+                    "--title", f"SẢNH TRUYỆN upload {request_id}",
+                    "--notes", "Temporary private story upload for one SẢNH TRUYỆN job.",
+                    "--draft",
+                ],
+                timeout=180,
+            )
+            if upload.returncode != 0:
                 raise RuntimeError(
-                    "Chương này quá lớn để gửi trực tiếp qua dữ liệu workflow_dispatch "
-                    f"({len(encoded):,} ký tự sau nén; giới hạn an toàn "
-                    f"{GITHUB_AUDIO_MAX_ENCODED_CHARS:,}). Không có nội dung nào được gửi. "
-                    "Hãy chia chương thành phần ngắn hơn hoặc dùng quy trình tải tệp lên repository Private."
+                    "Không tải được chương lên release tạm của repository Private. "
+                    "Kiểm tra quyền ghi Releases/Contents của tài khoản GitHub.\\n"
+                    + (upload.stderr or upload.stdout or "")[-1800:]
                 )
 
             runs_endpoint = (
@@ -969,7 +983,6 @@ class NovelStudioApp:
             payload = {
                 "ref": ref,
                 "inputs": {
-                    "content_gzip_base64": encoded,
                     "request_id": request_id,
                     "voice": job["voice"],
                     "rate": str(job["rate"]),
@@ -991,6 +1004,7 @@ class NovelStudioApp:
                     + (dispatch.stderr or dispatch.stdout or "")[-2000:]
                 )
 
+            dispatched = True
             self.root.after(
                 0, lambda j=job_id, m="Đã gửi chương lên GitHub · đang chờ runner...":
                 self._set_audio_job_progress(j, m)
@@ -1122,6 +1136,20 @@ class NovelStudioApp:
         finally:
             if download_dir.exists():
                 shutil.rmtree(download_dir, ignore_errors=True)
+            upload_dir = TEMP_DIR / f"github_audio_upload_{job_id}"
+            if upload_dir.exists():
+                shutil.rmtree(upload_dir, ignore_errors=True)
+            # Before dispatch, clean up a release if upload succeeded but dispatch failed.
+            # After dispatch, the workflow's always()-cleanup job owns remote cleanup.
+            if not locals().get("dispatched", False):
+                tag = f"st-request-{request_id}"
+                try:
+                    self._run_github_cli(
+                        ["release", "delete", tag, "--repo", repo, "--yes", "--cleanup-tag"],
+                        timeout=60,
+                    )
+                except Exception:
+                    pass
 
     @staticmethod
     def _safe_audio_stem(stem: str) -> str:
