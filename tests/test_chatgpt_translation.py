@@ -111,6 +111,19 @@ class ThreeChapterBatchTests(unittest.TestCase):
         self.assertEqual(len(batches), 1)
         self.assertEqual(batches[0], source)
 
+    def test_vietnamese_chuong_thu_headings_are_detected(self):
+        source = (
+            "Chương thứ 45\nTiêu đề 45\nNội dung chương 45.\n\n"
+            "Chương thứ 46\nPhần dưới lòng đất\nNội dung chương 46."
+        )
+        chapter_count, batches = self.app_module.split_novel_into_batches(source, 3)
+        chapters, labels = self.app_module.split_novel_into_chapters(source)
+        self.assertEqual(chapter_count, 2)
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(batches[0], source)
+        self.assertEqual(labels, ["Chương thứ 45", "Chương thứ 46"])
+        self.assertEqual("".join(chapters), source)
+
     def test_missing_chapter_headings_is_reported(self):
         with self.assertRaisesRegex(ValueError, "Không nhận ra tiêu đề chương"):
             self.app_module.split_novel_into_batches("Chỉ có văn bản mà không có tiêu đề chương.")
