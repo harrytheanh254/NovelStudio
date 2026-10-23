@@ -31,6 +31,16 @@ class LiteraryModesTests(unittest.TestCase):
         self.assertIn('PS / P.S.', prompt)
         self.assertIn('Không in đậm', prompt)
 
+    def test_chinese_heading_with_fullwidth_comma_is_detected(self):
+        source = "第一章，天崩開局\n「咳咳！」\n\n第二章，继续\n正文。"
+        count, batches = APP.split_novel_into_batches(source, chapters_per_batch=3)
+        chapters, labels = APP.split_novel_into_chapters(source)
+        self.assertEqual(count, 2)
+        self.assertEqual(len(batches), 1)
+        self.assertEqual(batches[0], source)
+        self.assertEqual(labels, ["第一章，天崩開局", "第二章，继续"])
+        self.assertEqual("".join(chapters), source)
+
     def test_research_prompt_prepares_reference_without_translating(self):
         source = ''.join(f'第{n}章 标题{n}\\n吴邪出现。\\n\\n' for n in range(1, 16))
         prompt = APP.build_story_research_prompt(
