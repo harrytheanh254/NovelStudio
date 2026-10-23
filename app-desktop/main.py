@@ -125,7 +125,7 @@ def split_text_for_clipboard_translation(text: str, max_chars: int = 2800) -> li
 CHAPTER_HEADING_RE = re.compile(
     r"(?im)^[ \t\u3000]*("
     r"第\s*[0-9０-９零〇一二三四五六七八九十百千万两兩廿卅]+\s*(?:章|回|节|節|卷|集|部|篇)(?:[ \t\u3000:：.．、，\-—].*)?"
-    r"|(?:Chapter|Chương)\s+[0-9０-９零〇一二三四五六七八九十百千万]+(?:[ \t\u3000:：.．、，\-—].*)?"
+    r"|(?:Chapter\s+|Chương\s+(?:thứ\s+)?)[0-9０-９零〇一二三四五六七八九十百千万]+(?:[ \t\u3000:：.．、，\-—].*)?"
     r")[ \t\u3000]*$"
 )
 
@@ -138,7 +138,7 @@ def split_novel_into_chapters(text: str) -> tuple[list[str], list[str]]:
     if not matches:
         raise ValueError(
             "Không nhận ra tiêu đề chương trong file TXT. Hãy giữ tiêu đề dạng '第1章', '第十二章', "
-            "'Chapter 1' hoặc 'Chương 1' để SẢNH TRUYỆN gom chính xác 3 chương mỗi lượt."
+            "'Chapter 1', 'Chương 1' hoặc 'Chương thứ 46' để SẢNH TRUYỆN gom chính xác 3 chương mỗi lượt."
         )
     starts = [0] + [match.start() for match in matches[1:]]
     chapters: list[str] = []
