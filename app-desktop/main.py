@@ -610,7 +610,7 @@ class NovelStudioApp:
                      wraplength=235, justify="left").pack(anchor="w", padx=14, pady=(5, 8))
             actions = tk.Frame(card, bg=PANEL)
             actions.pack(anchor="w", padx=14, pady=(0, 11))
-            self._button(actions, button, command, primary=primary, width=16)
+            self._button(actions, button, command, primary=primary, width=150)
 
         recent = self._panel(
             page, "HỒ SƠ GẦN ĐÂY",
