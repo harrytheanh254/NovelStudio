@@ -3,3 +3,5 @@ ctranslate2>=4.6,<5
 huggingface_hub>=0.24,<2
 transformers>=4.40,<5
 sentencepiece>=0.2,<1
+PyJWT[crypto]>=2.10,<3
+pypdf>=5,<7

@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import traceback
 from pathlib import Path
+
+# Avoid OpenBLAS allocating a worker pool for every reported CPU core on constrained PCs.
+# Set these before transformers/numpy or other libraries load a BLAS runtime.
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["GOTO_NUM_THREADS"] = "1"
 
 # Windows consoles may use a legacy code page that cannot print Vietnamese text.
 # Force UTF-8 for status messages and warnings; replace any unencodable third-party output.
