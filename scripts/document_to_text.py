@@ -369,6 +369,8 @@ def convert_document_to_text(source: Path) -> str:
         supported = ", ".join(sorted(SUPPORTED_DOCUMENT_EXTENSIONS))
         raise ValueError(f"Chưa hỗ trợ định dạng {extension or '(không có phần mở rộng)'}. Hỗ trợ: {supported}")
 
+    # Use consistent LF newlines internally on Windows and other platforms.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not text.strip():
         raise ValueError("Không trích xuất được văn bản có nội dung từ tệp này.")
     return text
