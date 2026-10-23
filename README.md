@@ -6,7 +6,7 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
 
 ## Features
 
-- **Cào truyện:** opens the real Chrome browser; lets you choose an EPUB and calls the local `epub2txt` executable. Install WebToEpub separately in Chrome.
+- **Cào truyện:** opens the real Chrome browser for WebToEpub, then converts EPUB and common document formats to TXT. Direct local support includes TXT/Markdown, HTML/XHTML/XML, DOCX, ODT, RTF, FB2 and text-based PDFs. EPUB uses the bundled `epub2txt`; MOBI/AZW/AZW3 require Calibre, legacy DOC requires LibreOffice, and image-only/scanned PDFs need OCR which is not bundled. Source files are kept; existing raw TXT outputs are not overwritten.
 - **Dịch truyện:** local Chinese-to-Vietnamese translation using HachimiMT-60 with CTranslate2 INT8 on CPU. Model weights are downloaded from Hugging Face on first use; no paid API key is required.
 - **Tạo audio dài:** dán toàn bộ nội dung vào khung bên trái hoặc nạp một TXT, chọn giọng và tốc độ rồi nhấn **TẠO AUDIO**. Nút này chạy qua GitHub Actions để tạo một MP3 trên máy chủ rồi tự tải về máy. Khung bên phải hiển thị tiến trình, thời gian, kết quả và lỗi.
 - Keeps raw TXT, translated TXT, EPUB and MP3 outputs in local project folders.
@@ -57,6 +57,8 @@ A lightweight Windows desktop prototype for managing a novel workflow: web captu
    ```
 
 If your Python 3.12 path differs, edit the `$Python` variable in the setup scripts and the `PYTHON` variable in `run_desktop.bat`.
+
+- **Document conversion notes:** After updating, the translation environment installs `pypdf` via `requirements-translation.txt`. To enable PDF text extraction immediately, run `D:\NovelStudio\envs\translation\Scripts\python.exe -m pip install pypdf` if needed. Scanned PDFs contain page images rather than a text layer and require OCR; SẢNH TRUYỆN reports this rather than silently creating an empty TXT.
 
 ## Translation model
 
